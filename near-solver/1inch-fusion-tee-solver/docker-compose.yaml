@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  fusion_solver:
+    build: .
+    image: 1inch-fusion-tee-solver:latest
+    platform: linux/amd64
+    ports:
+      - "9090:9090"
+    environment:
+      # 1inch Fusion+ Configuration
+      INCH_FUSION_API_KEY: ${INCH_FUSION_API_KEY}
+      INCH_FUSION_API_URL: ${INCH_FUSION_API_URL}
+      INCH_FUSION_NETWORK_IDS: ${INCH_FUSION_NETWORK_IDS}
+      
+      # NEAR Configuration
+      NEAR_NETWORK_ID: ${NEAR_NETWORK_ID}
+      NEAR_NODE_URL: ${NEAR_NODE_URL}
+      NEAR_ACCOUNT_ID: ${NEAR_ACCOUNT_ID}
+      NEAR_PRIVATE_KEY: ${NEAR_PRIVATE_KEY}
+      
+      # Solver Registry Configuration
+      SOLVER_REGISTRY_CONTRACT: ${SOLVER_REGISTRY_CONTRACT}
+      INTENTS_VAULT_CONTRACT: ${INTENTS_VAULT_CONTRACT}
+      SOLVER_POOL_ID: ${SOLVER_POOL_ID}
+      
+      # TEE Configuration
+      TEE_MODE: ${TEE_MODE:-development}
+      
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: ${NODE_ENV:-production}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    volumes:
+      # TEE socket mount (required for production)
+      - /var/run/tappd.sock:/var/run/tappd.sock
+      # Persistent data
+      - solver_data:/app/data
+    networks:
+      - fusion_network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis for caching (optional, for production)
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - fusion_network
+    restart: unless-stopped
+
+  # PostgreSQL for order history (optional, for production)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: fusion_solver
+      POSTGRES_USER: solver
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-solver123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - fusion_network
+    restart: unless-stopped
+
+  # Monitoring with Prometheus (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9091:9090"
+    networks:
+      - fusion_network
+    restart: unless-stopped
+
+networks:
+  fusion_network:
+    driver: bridge
+
+volumes:
+  solver_data:
+  redis_data:
+  postgres_data:
+  prometheus_data:
