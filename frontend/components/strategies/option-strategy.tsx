@@ -5,8 +5,8 @@ import { Label } from '@/components/ui/label';
 import { useStrategies } from '@/context/StrategiesContext';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import { useWriteContract, useReadContract } from 'wagmi';
-import { OptionsProtocolABI } from '@/lib/contracts/abis';
-import { getContractAddress } from '@/lib/contracts/addresses';
+import { OptionsProtocolABI } from '@/util/contracts/abis';
+import { getContractAddress } from '@/util/contracts/addresses';
 import { toast } from 'sonner';
 import { parseEther } from 'viem'
 

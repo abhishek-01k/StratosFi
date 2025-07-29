@@ -7,8 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { OptionsProtocolABI } from '@/lib/contracts/abis'
-import { getContractAddress } from '@/lib/contracts/addresses'
+import { OptionsProtocolABI } from '@/util/contracts/abis'
+import { getContractAddress } from '@/util/contracts/addresses'
 import { AlertCircle, Shield, TrendingUp, TrendingDown, Calculator } from 'lucide-react'
 
 type OptionType = 'call' | 'put'

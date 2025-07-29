@@ -4,8 +4,8 @@ import { Button } from '../ui/button';
 import { useStrategies } from '@/context/StrategiesContext';
 import type { LiquidityStrategyParams } from '@/context/StrategiesContext';
 import { useWriteContract } from 'wagmi';
-import { ConcentratedLiquidityHookABI } from '@/lib/contracts/abis';
-import { getContractAddress } from '@/lib/contracts/addresses';
+import { ConcentratedLiquidityHookABI } from '@/util/contracts/abis';
+import { getContractAddress } from '@/util/contracts/addresses';
 import { toast } from 'sonner';
 
 const FEE_TIERS = [

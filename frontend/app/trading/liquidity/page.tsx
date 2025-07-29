@@ -7,8 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ConcentratedLiquidityHookABI } from '@/lib/contracts/abis'
-import { getContractAddress } from '@/lib/contracts/addresses'
+import { ConcentratedLiquidityHookABI } from '@/util/contracts/abis'
+import { getContractAddress } from '@/util/contracts/addresses'
 import { AlertCircle, Layers, DollarSign, Activity } from 'lucide-react'
 
 const FEE_TIERS = [

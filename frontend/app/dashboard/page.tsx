@@ -2,8 +2,8 @@
 
 import { useAccount, useContractRead } from 'wagmi'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { VolatilityOracleABI, AdvancedStrategyRouterABI } from '@/lib/contracts/abis'
-import { getContractAddress } from '@/lib/contracts/addresses'
+import { VolatilityOracleABI, AdvancedStrategyRouterABI } from '@/util/contracts/abis'
+import { getContractAddress } from '@/util/contracts/addresses'
 import { Activity, TrendingUp, Shield, AlertTriangle, BarChart3, Users, DollarSign, Clock } from 'lucide-react'
 
 const VOLATILITY_CATEGORIES = ['LOW', 'NORMAL', 'HIGH', 'EXTREME']

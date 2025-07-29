@@ -11,8 +11,8 @@ import { Button } from '../ui/button';
 import { useStrategies } from '@/context/StrategiesContext';
 import { Label } from '../ui/label';
 import { useWriteContract } from 'wagmi';
-import { TWAPEngineABI } from '@/lib/contracts/abis';
-import { getContractAddress } from '@/lib/contracts/addresses';
+import { TWAPEngineABI } from '@/util/contracts/abis';
+import { getContractAddress } from '@/util/contracts/addresses';
 import { toast } from 'sonner'
 
 const TwapStrategy = () => {
