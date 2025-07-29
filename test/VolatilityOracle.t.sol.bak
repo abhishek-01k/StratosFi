@@ -1,0 +1,179 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "forge-std/Test.sol";
+import "../src/oracles/VolatilityOracle.sol";
+
+contract MockChainlinkOracle {
+    struct RoundData {
+        int256 price;
+        uint256 timestamp;
+    }
+    
+    mapping(uint256 => RoundData) public rounds;
+    uint256 public latestRound;
+    
+    function addRound(int256 price) external {
+        latestRound++;
+        rounds[latestRound] = RoundData(price, block.timestamp);
+    }
+    
+    function latestRoundData() external view returns (
+        uint80 roundId,
+        int256 price,
+        uint256 startedAt,
+        uint256 updatedAt,
+        uint80 answeredInRound
+    ) {
+        RoundData memory data = rounds[latestRound];
+        return (uint80(latestRound), data.price, data.timestamp, data.timestamp, uint80(latestRound));
+    }
+    
+    function getRoundData(uint80 _roundId) external view returns (
+        uint80 roundId,
+        int256 price,
+        uint256 startedAt,
+        uint256 updatedAt,
+        uint80 answeredInRound
+    ) {
+        RoundData memory data = rounds[_roundId];
+        return (_roundId, data.price, data.timestamp, data.timestamp, _roundId);
+    }
+}
+
+contract VolatilityOracleTest is Test {
+    VolatilityOracle public oracle;
+    MockChainlinkOracle public priceOracle;
+    
+    address public tokenA = address(0x1);
+    address public tokenB = address(0x2);
+    
+    function setUp() public {
+        priceOracle = new MockChainlinkOracle();
+        oracle = new VolatilityOracle(address(priceOracle));
+        
+        // Add initial price data
+        priceOracle.addRound(1000 * 1e8); // $1000
+    }
+    
+    function testUpdateVolatility() public {
+        uint256 newVolatility = 5000; // 50%
+        
+        oracle.updateVolatility(tokenA, newVolatility);
+        
+        uint256 storedVolatility = oracle.getVolatility(tokenA);
+        assertEq(storedVolatility, newVolatility);
+    }
+    
+    function testCalculateVolatilityWithPriceMovements() public {
+        // Add historical price data with movements
+        vm.warp(block.timestamp + 1 hours);
+        priceOracle.addRound(1010 * 1e8); // +1%
+        
+        vm.warp(block.timestamp + 1 hours);
+        priceOracle.addRound(990 * 1e8); // -2%
+        
+        vm.warp(block.timestamp + 1 hours);
+        priceOracle.addRound(1005 * 1e8); // +1.5%
+        
+        vm.warp(block.timestamp + 1 hours);
+        priceOracle.addRound(1000 * 1e8); // -0.5%
+        
+        uint256 volatility = oracle.calculateVolatility(tokenA, 5);
+        
+        // Volatility should be > 0 due to price movements
+        assertGt(volatility, 0);
+        // But not extremely high
+        assertLt(volatility, 10000);
+    }
+    
+    function testCalculateVolatilityStablePrice() public {
+        // Add historical price data with no movements
+        for (uint i = 0; i < 5; i++) {
+            vm.warp(block.timestamp + 1 hours);
+            priceOracle.addRound(1000 * 1e8); // Same price
+        }
+        
+        uint256 volatility = oracle.calculateVolatility(tokenA, 5);
+        
+        // Volatility should be 0 for stable price
+        assertEq(volatility, 0);
+    }
+    
+    function testCalculateVolatilityInsufficientData() public {
+        // Try to calculate with more periods than available
+        uint256 volatility = oracle.calculateVolatility(tokenA, 100);
+        
+        // Should return 0 when insufficient data
+        assertEq(volatility, 0);
+    }
+    
+    function testGetImpliedVolatility() public {
+        // Set some volatility
+        oracle.updateVolatility(tokenA, 6000); // 60%
+        
+        uint256 impliedVol = oracle.getImpliedVolatility(tokenA);
+        
+        // Should return the stored volatility
+        assertEq(impliedVol, 6000);
+    }
+    
+    function testVolatilityWithLargePriceSwings() public {
+        // Simulate large price swings
+        vm.warp(block.timestamp + 1 hours);
+        priceOracle.addRound(1200 * 1e8); // +20%
+        
+        vm.warp(block.timestamp + 1 hours);
+        priceOracle.addRound(800 * 1e8); // -33%
+        
+        vm.warp(block.timestamp + 1 hours);
+        priceOracle.addRound(1100 * 1e8); // +37.5%
+        
+        uint256 volatility = oracle.calculateVolatility(tokenA, 4);
+        
+        // Volatility should be high due to large swings
+        assertGt(volatility, 5000); // > 50%
+    }
+    
+    function testVolatilityCalculationEdgeCases() public {
+        // Test with single data point
+        uint256 volatility = oracle.calculateVolatility(tokenA, 1);
+        assertEq(volatility, 0);
+        
+        // Test with zero periods
+        volatility = oracle.calculateVolatility(tokenA, 0);
+        assertEq(volatility, 0);
+    }
+    
+    function testMultipleTokenVolatility() public {
+        // Set different volatilities for different tokens
+        oracle.updateVolatility(tokenA, 3000); // 30%
+        oracle.updateVolatility(tokenB, 8000); // 80%
+        
+        assertEq(oracle.getVolatility(tokenA), 3000);
+        assertEq(oracle.getVolatility(tokenB), 8000);
+        
+        // Update one without affecting the other
+        oracle.updateVolatility(tokenA, 4000);
+        assertEq(oracle.getVolatility(tokenA), 4000);
+        assertEq(oracle.getVolatility(tokenB), 8000);
+    }
+    
+    function testVolatilityPrecision() public {
+        // Add price data with small movements
+        vm.warp(block.timestamp + 1 hours);
+        priceOracle.addRound(1001 * 1e8); // +0.1%
+        
+        vm.warp(block.timestamp + 1 hours);
+        priceOracle.addRound(999 * 1e8); // -0.2%
+        
+        vm.warp(block.timestamp + 1 hours);
+        priceOracle.addRound(1002 * 1e8); // +0.3%
+        
+        uint256 volatility = oracle.calculateVolatility(tokenA, 4);
+        
+        // Should detect small volatility
+        assertGt(volatility, 0);
+        assertLt(volatility, 1000); // < 10%
+    }
+}

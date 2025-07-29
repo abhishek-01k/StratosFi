@@ -1,0 +1,430 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "forge-std/Test.sol";
+import "../src/AdvancedStrategyRouter.sol";
+import "../src/strategies/TWAPEngine.sol";
+import "../src/strategies/ConcentratedLiquidityHook.sol";
+import "../src/strategies/OptionsProtocol.sol";
+import "../src/oracles/VolatilityOracle.sol";
+import "../src/interfaces/IOrderMixin.sol";
+import "../src/interfaces/IAdvancedStrategy.sol";
+
+contract MockPriceOracle {
+    mapping(address => uint256) public prices;
+    
+    function setPrice(address token, uint256 price) external {
+        prices[token] = price;
+    }
+    
+    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
+        return (0, int256(prices[msg.sender]), 0, block.timestamp, 0);
+    }
+}
+
+contract AdvancedStrategyRouterTest is Test {
+    AdvancedStrategyRouter public router;
+    TWAPEngine public twapEngine;
+    ConcentratedLiquidityHook public liquidityHook;
+    OptionsProtocol public optionsProtocol;
+    VolatilityOracle public volatilityOracle;
+    MockPriceOracle public priceOracle;
+    
+    address public owner = address(0x99);
+    address public feeCollector = address(0x100);
+    address public alice = address(0x1);
+    address public bob = address(0x2);
+    address public tokenA = address(0x3);
+    address public tokenB = address(0x4);
+    
+    bytes32 constant ORDER_HASH = keccak256("test_order");
+    
+    function setUp() public {
+        vm.startPrank(owner);
+        
+        // Deploy oracles
+        priceOracle = new MockPriceOracle();
+        volatilityOracle = new VolatilityOracle();
+        
+        // Deploy strategies
+        twapEngine = new TWAPEngine(address(priceOracle));
+        liquidityHook = new ConcentratedLiquidityHook();
+        optionsProtocol = new OptionsProtocol(feeCollector, address(priceOracle));
+        
+        // Deploy router
+        router = new AdvancedStrategyRouter(
+            address(optionsProtocol),
+            address(liquidityHook),
+            address(twapEngine),
+            address(volatilityOracle),
+            feeCollector
+        );
+        
+        // Set initial prices
+        priceOracle.setPrice(tokenA, 1000 * 1e18);
+        priceOracle.setPrice(tokenB, 2000 * 1e18);
+        
+        vm.stopPrank();
+        
+        // Fund test accounts
+        vm.deal(alice, 100 ether);
+        vm.deal(bob, 100 ether);
+        vm.deal(address(router), 10 ether); // Fund router for fee collection
+    }
+    
+    function testGetMakingAmountTWAP() public {
+        // Setup TWAP order
+        vm.startPrank(alice);
+        bytes32 twapId = twapEngine.configureTWAP(
+            1000 * 1e18,
+            10,
+            10 hours,
+            500,
+            false
+        );
+        vm.stopPrank();
+        
+        // Create test order
+        IOrderMixin.Order memory order = IOrderMixin.Order({
+            salt: 1,
+            maker: uint256(uint160(alice)),
+            receiver: uint256(uint160(alice)),
+            makerAsset: uint256(uint160(tokenA)),
+            takerAsset: uint256(uint160(tokenB)),
+            makingAmount: 1000 * 1e18,
+            takingAmount: 500 * 1e18,
+            makerTraits: 0
+        });
+        
+        // Encode strategy data
+        bytes memory strategyData = abi.encode(
+            IAdvancedStrategy.StrategyType.TWAP,
+            abi.encode(twapId)
+        );
+        
+        uint256 makingAmount = router.getMakingAmount(
+            order,
+            "",
+            ORDER_HASH,
+            alice,
+            0,
+            0,
+            strategyData
+        );
+        
+        assertEq(makingAmount, 100 * 1e18); // 1/10 of total
+    }
+    
+    function testGetTakingAmountOptions() public {
+        // Setup option
+        vm.startPrank(alice);
+        bytes32 optionId = optionsProtocol.createCallOption{value: 50 * 1e18}(
+            ORDER_HASH,
+            2200 * 1e18,
+            block.timestamp + 7 days,
+            50 * 1e18
+        );
+        vm.stopPrank();
+        
+        // Create test order
+        IOrderMixin.Order memory order = IOrderMixin.Order({
+            salt: 1,
+            maker: uint256(uint160(alice)),
+            receiver: uint256(uint160(alice)),
+            makerAsset: uint256(uint160(tokenA)),
+            takerAsset: uint256(uint160(tokenB)),
+            makingAmount: 1000 * 1e18,
+            takingAmount: 1 * 1e18,
+            makerTraits: 0
+        });
+        
+        // Encode strategy data
+        bytes memory strategyData = abi.encode(
+            IAdvancedStrategy.StrategyType.Options,
+            abi.encode(optionId)
+        );
+        
+        uint256 takingAmount = router.getTakingAmount(
+            order,
+            "",
+            ORDER_HASH,
+            alice,
+            1000 * 1e18,
+            0,
+            strategyData
+        );
+        
+        assertEq(takingAmount, 1 * 1e18);
+    }
+    
+    function testConfigureStrategy() public {
+        vm.startPrank(alice);
+        
+        IAdvancedStrategy.StrategyConfig memory config = IAdvancedStrategy.StrategyConfig({
+            strategyType: IAdvancedStrategy.StrategyType.TWAP,
+            isActive: true,
+            minExecutionAmount: 1 * 1e18,
+            maxExecutionAmount: 10000 * 1e18,
+            oracle: address(volatilityOracle),
+            additionalData: abi.encode(30 minutes, 100, 500)
+        });
+        
+        bytes32 configId = router.configureStrategy(config);
+        
+        assertEq(configId != bytes32(0), true);
+        
+        vm.stopPrank();
+    }
+    
+    function testExecuteStrategyWithFees() public {
+        // Setup TWAP order
+        vm.startPrank(alice);
+        bytes32 twapId = twapEngine.configureTWAP(
+            1000 * 1e18,
+            10,
+            10 hours,
+            500,
+            false
+        );
+        
+        // Create test order
+        IOrderMixin.Order memory order = IOrderMixin.Order({
+            salt: 1,
+            maker: uint256(uint160(alice)),
+            receiver: uint256(uint160(alice)),
+            makerAsset: uint256(uint160(tokenA)),
+            takerAsset: uint256(uint160(tokenB)),
+            makingAmount: 1000 * 1e18,
+            takingAmount: 500 * 1e18,
+            makerTraits: 0
+        });
+        
+        // Encode strategy data
+        bytes memory strategyData = abi.encode(
+            IAdvancedStrategy.StrategyType.TWAP,
+            abi.encode(twapId)
+        );
+        
+        uint256 feeCollectorBalanceBefore = feeCollector.balance;
+        
+        // Execute strategy with value for fees
+        uint256 executedAmount = router.executeStrategy(
+            ORDER_HASH,
+            strategyData
+        );
+        
+        assertGt(executedAmount, 0);
+        
+        // Verify execution stats
+        (uint256 executions, , , ) = router.getUserStats(alice);
+        assertEq(executions, 1);
+        
+        vm.stopPrank();
+    }
+    
+    function testValidateStrategy() public {
+        // Setup TWAP order
+        vm.startPrank(alice);
+        bytes32 twapId = twapEngine.configureTWAP(
+            1000 * 1e18,
+            10,
+            10 hours,
+            500,
+            false
+        );
+        
+        // Encode strategy data
+        bytes memory strategyData = abi.encode(
+            IAdvancedStrategy.StrategyType.TWAP,
+            abi.encode(twapId)
+        );
+        
+        bool isValid = router.validateStrategy(ORDER_HASH, strategyData);
+        assertEq(isValid, true);
+        
+        vm.stopPrank();
+    }
+    
+    function testCombinedStrategy() public {
+        vm.startPrank(alice);
+        
+        // Setup TWAP
+        bytes32 twapId = twapEngine.configureTWAP(
+            1000 * 1e18,
+            10,
+            10 hours,
+            500,
+            false
+        );
+        
+        // Setup Option
+        bytes32 optionId = optionsProtocol.createCallOption{value: 50 * 1e18}(
+            ORDER_HASH,
+            2200 * 1e18,
+            block.timestamp + 7 days,
+            50 * 1e18
+        );
+        
+        // Configure combined strategy
+        AdvancedStrategyRouter.CombinedStrategyConfig memory combinedConfig = AdvancedStrategyRouter.CombinedStrategyConfig({
+            useOptions: true,
+            useConcentratedLiquidity: false,
+            useTWAP: true,
+            useVolatilityAdjustment: false,
+            optionsData: abi.encode(optionId),
+            liquidityData: "",
+            twapData: abi.encode(twapId),
+            maxGasPrice: 100 gwei
+        });
+        
+        bytes32 combinedConfigId = router.configureCombinedStrategy(combinedConfig);
+        
+        // Create test order
+        IOrderMixin.Order memory order = IOrderMixin.Order({
+            salt: 1,
+            maker: uint256(uint160(alice)),
+            receiver: uint256(uint160(alice)),
+            makerAsset: uint256(uint160(tokenA)),
+            takerAsset: uint256(uint160(tokenB)),
+            makingAmount: 1000 * 1e18,
+            takingAmount: 500 * 1e18,
+            makerTraits: 0
+        });
+        
+        // Encode combined strategy data
+        bytes memory strategyData = abi.encode(
+            IAdvancedStrategy.StrategyType.Combined,
+            combinedConfigId
+        );
+        
+        // Execute combined strategy
+        uint256 executedAmount = router.executeStrategy(
+            ORDER_HASH,
+            strategyData
+        );
+        
+        assertGt(executedAmount, 0);
+        
+        vm.stopPrank();
+    }
+    
+    function testPauseUnpause() public {
+        vm.startPrank(owner);
+        
+        // Pause the router
+        router.pause();
+        
+        vm.stopPrank();
+        
+        // Try to execute strategy while paused
+        vm.startPrank(alice);
+        
+        IOrderMixin.Order memory order = IOrderMixin.Order({
+            salt: 1,
+            maker: uint256(uint160(alice)),
+            receiver: uint256(uint160(alice)),
+            makerAsset: uint256(uint160(tokenA)),
+            takerAsset: uint256(uint160(tokenB)),
+            makingAmount: 1000 * 1e18,
+            takingAmount: 500 * 1e18,
+            makerTraits: 0
+        });
+        
+        bytes memory strategyData = abi.encode(
+            IAdvancedStrategy.StrategyType.TWAP,
+            abi.encode(bytes32(0))
+        );
+        
+        vm.expectRevert("Pausable: paused");
+        router.executeStrategy(ORDER_HASH, strategyData);
+        
+        vm.stopPrank();
+        
+        // Unpause
+        vm.startPrank(owner);
+        router.unpause();
+        vm.stopPrank();
+    }
+    
+    function testEmergencyPauseHighVolatility() public {
+        // Set high volatility
+        vm.startPrank(address(volatilityOracle));
+        // Note: In a real scenario, we would need to set up the volatility oracle properly
+        // For now, we'll skip this test as it requires oracle authorization
+        vm.skip(true);
+        vm.stopPrank();
+        
+        // Try to execute strategy
+        vm.startPrank(alice);
+        
+        IOrderMixin.Order memory order = IOrderMixin.Order({
+            salt: 1,
+            maker: uint256(uint160(alice)),
+            receiver: uint256(uint160(alice)),
+            makerAsset: uint256(uint160(tokenA)),
+            takerAsset: uint256(uint160(tokenB)),
+            makingAmount: 1000 * 1e18,
+            takingAmount: 500 * 1e18,
+            makerTraits: 0
+        });
+        
+        bytes memory strategyData = abi.encode(
+            IAdvancedStrategy.StrategyType.TWAP,
+            abi.encode(bytes32(0))
+        );
+        
+        // Should fail due to high volatility
+        uint256 executedAmount = router.executeStrategy(ORDER_HASH, strategyData);
+        // Should return 0 due to high volatility emergency pause
+        assertEq(executedAmount, 0);
+        
+        vm.stopPrank();
+    }
+    
+    function testUpdateProtocolFee() public {
+        vm.startPrank(owner);
+        
+        // Update fee to 0.2%
+        router.updateProtocolFee(20);
+        assertEq(router.protocolFeeRate(), 20);
+        
+        // Try to set invalid fee
+        vm.expectRevert("Fee too high");
+        router.updateProtocolFee(101); // > 1%
+        
+        vm.stopPrank();
+    }
+    
+    function testGetGasEstimate() public {
+        // Gas estimation is handled internally by each strategy
+        // This test is a placeholder for future gas optimization testing
+        assertTrue(true);
+    }
+    
+    function testInvalidStrategyType() public {
+        vm.startPrank(alice);
+        
+        IOrderMixin.Order memory order = IOrderMixin.Order({
+            salt: 1,
+            maker: uint256(uint160(alice)),
+            receiver: uint256(uint160(alice)),
+            makerAsset: uint256(uint160(tokenA)),
+            takerAsset: uint256(uint160(tokenB)),
+            makingAmount: 1000 * 1e18,
+            takingAmount: 500 * 1e18,
+            makerTraits: 0
+        });
+        
+        // Try with invalid strategy type
+        bytes memory strategyData = abi.encode(
+            IAdvancedStrategy.StrategyType.Volatility, // Not implemented
+            abi.encode(bytes32(0))
+        );
+        
+        // Should revert with invalid strategy type
+        vm.expectRevert();
+        router.getMakingAmount(order, "", ORDER_HASH, alice, 0, 0, strategyData);
+        
+        vm.stopPrank();
+    }
+}

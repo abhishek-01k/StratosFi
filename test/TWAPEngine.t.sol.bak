@@ -1,0 +1,359 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "forge-std/Test.sol";
+import "../src/strategies/TWAPEngine.sol";
+import "../src/interfaces/IOrderMixin.sol";
+import "../src/oracles/VolatilityOracle.sol";
+import "../src/interfaces/IAdvancedStrategy.sol";
+
+contract MockPriceOracle {
+    mapping(address => uint256) public prices;
+    
+    function setPrice(address token, uint256 price) external {
+        prices[token] = price;
+    }
+    
+    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
+        return (0, int256(prices[msg.sender]), 0, block.timestamp, 0);
+    }
+}
+
+contract TWAPEngineTest is Test {
+    TWAPEngine public twapEngine;
+    VolatilityOracle public volatilityOracle;
+    MockPriceOracle public priceOracle;
+    
+    address public alice = address(0x1);
+    address public bob = address(0x2);
+    address public tokenA = address(0x3);
+    address public tokenB = address(0x4);
+    
+    bytes32 constant ORDER_HASH = keccak256("test_order");
+    
+    function setUp() public {
+        priceOracle = new MockPriceOracle();
+        volatilityOracle = new VolatilityOracle();
+        twapEngine = new TWAPEngine(address(volatilityOracle));
+        
+        // Set initial prices
+        priceOracle.setPrice(tokenA, 1000 * 1e18);
+        priceOracle.setPrice(tokenB, 2000 * 1e18);
+        
+        // Fund test accounts
+        vm.deal(alice, 100 ether);
+        vm.deal(bob, 100 ether);
+    }
+    
+    function testConfigureTWAP() public {
+        vm.startPrank(alice);
+        
+        uint256 totalAmount = 1000 * 1e18;
+        uint256 numIntervals = 10;
+        uint256 duration = 10 hours;
+        uint256 maxPriceDeviation = 500; // 5%
+        bool enableRandomization = true;
+        
+        bytes32 configId = twapEngine.configureTWAP(
+            totalAmount,
+            numIntervals,
+            duration,
+            maxPriceDeviation,
+            enableRandomization
+        );
+        
+        assertEq(configId != bytes32(0), true);
+        
+        // Verify TWAP status
+        (uint256 totalExecuted, uint256 executedIntervals, uint256 averagePrice, bool isPaused, uint256 lastExecutionTime) = 
+            twapEngine.getTWAPStatus(configId);
+        
+        assertEq(totalExecuted, 0);
+        assertEq(executedIntervals, 0);
+        assertEq(isPaused, false);
+        assertEq(lastExecutionTime, 0);
+        assertEq(averagePrice, 0);
+        
+        vm.stopPrank();
+    }
+    
+    function testConfigureTWAPWithInvalidParams() public {
+        vm.startPrank(alice);
+        
+        // Test with zero total amount
+        vm.expectRevert(TWAPEngine.InvalidTWAPConfig.selector);
+        twapEngine.configureTWAP(0, 10, 10 hours, 500, true);
+        
+        // Test with zero intervals
+        vm.expectRevert(TWAPEngine.InvalidTWAPConfig.selector);
+        twapEngine.configureTWAP(1000 * 1e18, 0, 10 hours, 500, true);
+        
+        // Test with too many intervals
+        vm.expectRevert(TWAPEngine.InvalidTWAPConfig.selector);
+        twapEngine.configureTWAP(1000 * 1e18, 1001, 10 hours, 500, true);
+        
+        // Test with too short duration
+        vm.expectRevert(TWAPEngine.InvalidTWAPConfig.selector);
+        twapEngine.configureTWAP(1000 * 1e18, 10, 5 minutes, 500, true);
+        
+        vm.stopPrank();
+    }
+    
+    function testGetMakingAmount() public {
+        // Configure TWAP
+        vm.startPrank(alice);
+        uint256 totalAmount = 1000 * 1e18;
+        uint256 numIntervals = 10;
+        uint256 duration = 10 hours;
+        
+        bytes32 configId = twapEngine.configureTWAP(
+            totalAmount,
+            numIntervals,
+            duration,
+            500,
+            true
+        );
+        vm.stopPrank();
+        
+        // Create test order
+        IOrderMixin.Order memory order = IOrderMixin.Order({
+            salt: 1,
+            maker: uint256(uint160(alice)),
+            receiver: uint256(uint160(alice)),
+            makerAsset: uint256(uint160(tokenA)),
+            takerAsset: uint256(uint160(tokenB)),
+            makingAmount: totalAmount,
+            takingAmount: 500 * 1e18,
+            makerTraits: 0
+        });
+        
+        // First execution should return amount for first interval
+        uint256 makingAmount = twapEngine.getMakingAmount(
+            order,
+            "",
+            ORDER_HASH,
+            alice,
+            0,
+            0,
+            abi.encode(configId)
+        );
+        
+        // Should be approximately 1/10 of total (with some randomization)
+        assertGt(makingAmount, 0);
+        assertLt(makingAmount, totalAmount);
+    }
+    
+    function testExecuteTWAPInterval() public {
+        // Configure TWAP
+        vm.startPrank(alice);
+        uint256 totalAmount = 1000 * 1e18;
+        uint256 numIntervals = 10;
+        uint256 duration = 10 hours;
+        
+        bytes32 configId = twapEngine.configureTWAP(
+            totalAmount,
+            numIntervals,
+            duration,
+            500,
+            false // disable randomization for predictable testing
+        );
+        
+        // Execute first interval
+        (uint256 executedAmount, uint256 executionPrice) = twapEngine.executeTWAPInterval(
+            configId,
+            ORDER_HASH,
+            1000 * 1e18 // current price
+        );
+        
+        assertEq(executedAmount, totalAmount / numIntervals);
+        assertEq(executionPrice, 1000 * 1e18);
+        
+        // Verify status updated
+        (uint256 totalExecuted, uint256 executedIntervals, , , ) = twapEngine.getTWAPStatus(configId);
+        assertEq(totalExecuted, executedAmount);
+        assertEq(executedIntervals, 1);
+        
+        vm.stopPrank();
+    }
+    
+    function testCannotExecuteIntervalTooSoon() public {
+        // Configure TWAP
+        vm.startPrank(alice);
+        uint256 totalAmount = 1000 * 1e18;
+        uint256 numIntervals = 10;
+        uint256 duration = 10 hours;
+        
+        bytes32 configId = twapEngine.configureTWAP(
+            totalAmount,
+            numIntervals,
+            duration,
+            500,
+            false
+        );
+        
+        // Execute first interval
+        twapEngine.executeTWAPInterval(configId, ORDER_HASH, 1000 * 1e18);
+        
+        // Try to execute again immediately - should fail
+        vm.expectRevert(TWAPEngine.IntervalNotReady.selector);
+        twapEngine.executeTWAPInterval(configId, ORDER_HASH, 1000 * 1e18);
+        
+        vm.stopPrank();
+    }
+    
+    function testPauseAndResumeTWAP() public {
+        // Configure TWAP
+        vm.startPrank(alice);
+        bytes32 configId = twapEngine.configureTWAP(
+            1000 * 1e18,
+            10,
+            10 hours,
+            500,
+            false
+        );
+        
+        // Pause TWAP
+        twapEngine.pauseTWAP(configId);
+        
+        // Verify paused
+        (, , , bool isPaused, ) = twapEngine.getTWAPStatus(configId);
+        assertEq(isPaused, true);
+        
+        // Try to execute while paused - should fail
+        vm.expectRevert(TWAPEngine.TWAPIsPaused.selector);
+        twapEngine.executeTWAPInterval(configId, ORDER_HASH, 1000 * 1e18);
+        
+        // Resume TWAP
+        twapEngine.resumeTWAP(configId);
+        
+        // Verify resumed
+        (, , , isPaused, ) = twapEngine.getTWAPStatus(configId);
+        assertEq(isPaused, false);
+        
+        vm.stopPrank();
+    }
+    
+    function testConfigureStrategy() public {
+        vm.startPrank(alice);
+        
+        // Configure using the strategy interface
+        bytes32 configId = twapEngine.configureStrategy(
+            IAdvancedStrategy.StrategyType.TWAP,
+            abi.encode(
+                1000 * 1e18,  // totalAmount
+                10,           // intervals
+                10 hours,     // duration
+                500,          // maxPriceDeviation
+                true          // enableRandomization
+            )
+        );
+        
+        assertEq(configId != bytes32(0), true);
+        
+        vm.stopPrank();
+    }
+    
+    function testExecuteStrategy() public {
+        // Configure TWAP
+        vm.startPrank(alice);
+        bytes32 configId = twapEngine.configureTWAP(
+            1000 * 1e18,
+            10,
+            10 hours,
+            500,
+            false
+        );
+        
+        // Create test order
+        IOrderMixin.Order memory order = IOrderMixin.Order({
+            salt: 1,
+            maker: uint256(uint160(alice)),
+            receiver: uint256(uint160(alice)),
+            makerAsset: uint256(uint160(tokenA)),
+            takerAsset: uint256(uint160(tokenB)),
+            makingAmount: 1000 * 1e18,
+            takingAmount: 500 * 1e18,
+            makerTraits: 0
+        });
+        
+        // Execute strategy
+        (bool success, bytes memory result) = twapEngine.executeStrategy(
+            order,
+            ORDER_HASH,
+            alice,
+            abi.encode(configId)
+        );
+        
+        assertEq(success, true);
+        
+        // Decode result
+        (uint256 executedMaking, uint256 executedTaking) = abi.decode(result, (uint256, uint256));
+        assertEq(executedMaking, 100 * 1e18); // 1/10 of total
+        assertEq(executedTaking, 50 * 1e18);  // 1/10 of total
+        
+        vm.stopPrank();
+    }
+    
+    function testValidateStrategy() public {
+        // Configure TWAP
+        vm.startPrank(alice);
+        bytes32 configId = twapEngine.configureTWAP(
+            100 * 1e18,
+            2,
+            2 hours,
+            500,
+            false
+        );
+        
+        // Should be valid initially
+        bool isValid = twapEngine.validateStrategy(ORDER_HASH, alice, abi.encode(configId));
+        assertEq(isValid, true);
+        
+        // Execute all intervals
+        twapEngine.executeTWAPInterval(configId, ORDER_HASH, 1000 * 1e18);
+        vm.warp(block.timestamp + 1 hours);
+        twapEngine.executeTWAPInterval(configId, ORDER_HASH, 1000 * 1e18);
+        
+        // Should be invalid after all intervals executed
+        isValid = twapEngine.validateStrategy(ORDER_HASH, alice, abi.encode(configId));
+        assertEq(isValid, false);
+        
+        vm.stopPrank();
+    }
+    
+    function testCompleteOrder() public {
+        // Configure and fully execute TWAP
+        vm.startPrank(alice);
+        uint256 totalAmount = 100 * 1e18;
+        uint256 numIntervals = 2;
+        uint256 duration = 2 hours;
+        
+        bytes32 configId = twapEngine.configureTWAP(
+            totalAmount,
+            numIntervals,
+            duration,
+            500,
+            false
+        );
+        
+        // Execute first interval
+        twapEngine.executeTWAPInterval(configId, ORDER_HASH, 1000 * 1e18);
+        
+        // Advance time
+        vm.warp(block.timestamp + 1 hours);
+        
+        // Execute second interval
+        twapEngine.executeTWAPInterval(configId, ORDER_HASH, 1000 * 1e18);
+        
+        // Verify order is completed
+        (uint256 totalExecuted, uint256 executedIntervals, , , ) = twapEngine.getTWAPStatus(configId);
+        assertEq(totalExecuted, totalAmount);
+        assertEq(executedIntervals, numIntervals);
+        
+        // Try to execute again - should fail
+        vm.expectRevert(TWAPEngine.TWAPIsCompleted.selector);
+        twapEngine.executeTWAPInterval(configId, ORDER_HASH, 1000 * 1e18);
+        
+        vm.stopPrank();
+    }
+}

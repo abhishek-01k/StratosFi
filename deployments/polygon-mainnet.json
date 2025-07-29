@@ -1,0 +1,24 @@
+{
+  "network": "polygon",
+  "chainId": 137,
+  "deployer": "0x575E1D9DB08388356ceb2e91C8e30B4E24664a62",
+  "deploymentDate": "2025-07-23",
+  "contracts": {
+    "VolatilityOracle": "0x0Aa50c2FC813d7d316d044464DF0D5cA8e8c4A79",
+    "TWAPEngine": "0xE2d88d34D34A1fba6f34F79785De1E36dc4f8c12",
+    "ConcentratedLiquidityHook": "0x2c58f9388470Cef9C163d40470BDcE62C0d9888e",
+    "OptionsProtocol": "0xB16c17578917fac80fEA345ee76021204cd07C34",
+    "AdvancedStrategyRouter": "0x49f3cF9680ed21857FCDe27B5C163FAae9e22F66"
+  },
+  "external": {
+    "1inchLimitOrderProtocol": "0x111111125421cA6dc452d289314280a0f8842A65",
+    "WMATIC": "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+    "USDC": "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+  },
+  "testTWAPConfig": {
+    "configId": "0xd370de720e8920af209d24cbc9f36bbf9001fab23564ae21503855867c2cce47",
+    "totalAmount": "1000000000000000",
+    "intervals": 5,
+    "duration": 3600
+  }
+}

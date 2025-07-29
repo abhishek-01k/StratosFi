@@ -1,0 +1,366 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "forge-std/Test.sol";
+import "../src/strategies/ConcentratedLiquidityHook.sol";
+import "../src/interfaces/IOrderMixin.sol";
+import "../src/interfaces/IAdvancedStrategy.sol";
+
+contract MockUniswapV3Pool {
+    int24 public currentTick = 0;
+    uint160 public sqrtPriceX96 = 79228162514264337593543950336; // 1:1 price
+    
+    function slot0() external view returns (
+        uint160 sqrtPriceX96_,
+        int24 tick,
+        uint16 observationIndex,
+        uint16 observationCardinality,
+        uint16 observationCardinalityNext,
+        uint8 feeProtocol,
+        bool unlocked
+    ) {
+        return (sqrtPriceX96, currentTick, 0, 0, 0, 0, true);
+    }
+    
+    function setTick(int24 _tick) external {
+        currentTick = _tick;
+    }
+    
+    function setSqrtPrice(uint160 _sqrtPrice) external {
+        sqrtPriceX96 = _sqrtPrice;
+    }
+}
+
+contract ConcentratedLiquidityHookTest is Test {
+    ConcentratedLiquidityHook public liquidityHook;
+    MockUniswapV3Pool public mockPool;
+    
+    address public alice = address(0x1);
+    address public bob = address(0x2);
+    address public tokenA = address(0x3);
+    address public tokenB = address(0x4);
+    
+    bytes32 constant ORDER_HASH = keccak256("test_order");
+    
+    function setUp() public {
+        mockPool = new MockUniswapV3Pool();
+        liquidityHook = new ConcentratedLiquidityHook();
+        
+        // Fund test accounts
+        vm.deal(alice, 100 ether);
+        vm.deal(bob, 100 ether);
+    }
+    
+    function testAddLiquidity() public {
+        vm.startPrank(alice);
+        
+        ConcentratedLiquidityHook.ConcentratedLiquidityParams memory params = 
+            ConcentratedLiquidityHook.ConcentratedLiquidityParams({
+                tickLower: -1000,
+                tickUpper: 1000,
+                feeTier: 3000,
+                amount0Desired: 1000 * 1e18,
+                amount1Desired: 1000 * 1e18,
+                amount0Min: 0,
+                amount1Min: 0,
+                recipient: alice,
+                deadline: block.timestamp + 1 hours
+            });
+        
+        bytes32 positionId = liquidityHook.addLiquidity(
+            ORDER_HASH,
+            alice,
+            params
+        );
+        
+        assertEq(positionId != bytes32(0), true);
+        
+        // Verify position details
+        ConcentratedLiquidityHook.LiquidityPosition memory position = 
+            liquidityHook.getPosition(positionId);
+        
+        assertEq(position.owner, alice);
+        assertEq(position.orderHash, ORDER_HASH);
+        assertEq(position.range.tickLower, -1000);
+        assertEq(position.range.tickUpper, 1000);
+        assertEq(position.isActive, true);
+        
+        vm.stopPrank();
+    }
+    
+    function testGetMakingAmountInRange() public {
+        // Add liquidity position
+        vm.startPrank(alice);
+        
+        ConcentratedLiquidityHook.ConcentratedLiquidityParams memory params = 
+            ConcentratedLiquidityHook.ConcentratedLiquidityParams({
+                tickLower: -1000,
+                tickUpper: 1000,
+                feeTier: 3000,
+                amount0Desired: 1000 * 1e18,
+                amount1Desired: 1000 * 1e18,
+                amount0Min: 0,
+                amount1Min: 0,
+                recipient: alice,
+                deadline: block.timestamp + 1 hours
+            });
+        
+        bytes32 positionId = liquidityHook.addLiquidity(
+            ORDER_HASH,
+            alice,
+            params
+        );
+        vm.stopPrank();
+        
+        // Create test order
+        IOrderMixin.Order memory order = IOrderMixin.Order({
+            salt: 1,
+            maker: uint256(uint160(alice)),
+            receiver: uint256(uint160(alice)),
+            makerAsset: uint256(uint160(tokenA)),
+            takerAsset: uint256(uint160(tokenB)),
+            makingAmount: 1000 * 1e18,
+            takingAmount: 1000 * 1e18,
+            makerTraits: 0
+        });
+        
+        // Current tick is 0, which is in range
+        uint256 makingAmount = liquidityHook.getMakingAmount(
+            order,
+            "",
+            ORDER_HASH,
+            alice,
+            0,
+            0,
+            abi.encode(positionId)
+        );
+        
+        // Should return full amount when in range
+        assertEq(makingAmount, 1000 * 1e18);
+    }
+    
+    function testGetMakingAmountOutOfRange() public {
+        // Add liquidity position
+        vm.startPrank(alice);
+        
+        ConcentratedLiquidityHook.ConcentratedLiquidityParams memory params = 
+            ConcentratedLiquidityHook.ConcentratedLiquidityParams({
+                tickLower: -1000,
+                tickUpper: 1000,
+                feeTier: 3000,
+                amount0Desired: 1000 * 1e18,
+                amount1Desired: 1000 * 1e18,
+                amount0Min: 0,
+                amount1Min: 0,
+                recipient: alice,
+                deadline: block.timestamp + 1 hours
+            });
+        
+        liquidityHook.addLiquidity(ORDER_HASH, alice, params);
+        vm.stopPrank();
+        
+        // Note: In the actual implementation, positions are tracked differently
+        // For testing purposes, we'll test the basic getMakingAmount logic
+        
+        // Create test order
+        IOrderMixin.Order memory order = IOrderMixin.Order({
+            salt: 1,
+            maker: uint256(uint160(alice)),
+            receiver: uint256(uint160(alice)),
+            makerAsset: uint256(uint160(tokenA)),
+            takerAsset: uint256(uint160(tokenB)),
+            makingAmount: 1000 * 1e18,
+            takingAmount: 1000 * 1e18,
+            makerTraits: 0
+        });
+        
+        // Test with params that would be out of range
+        ConcentratedLiquidityHook.ConcentratedLiquidityParams memory outOfRangeParams = 
+            ConcentratedLiquidityHook.ConcentratedLiquidityParams({
+                tickLower: 2000,
+                tickUpper: 3000,
+                feeTier: 3000,
+                amount0Desired: 1000 * 1e18,
+                amount1Desired: 1000 * 1e18,
+                amount0Min: 0,
+                amount1Min: 0,
+                recipient: alice,
+                deadline: block.timestamp + 1 hours
+            });
+        
+        uint256 makingAmount = liquidityHook.getMakingAmount(
+            order,
+            "",
+            ORDER_HASH,
+            alice,
+            0,
+            0,
+            abi.encode(outOfRangeParams)
+        );
+        
+        // Should return 0 when out of range
+        assertEq(makingAmount, 0);
+    }
+    
+    function testGetTakingAmount() public {
+        // Create test order
+        IOrderMixin.Order memory order = IOrderMixin.Order({
+            salt: 1,
+            maker: uint256(uint160(alice)),
+            receiver: uint256(uint160(alice)),
+            makerAsset: uint256(uint160(tokenA)),
+            takerAsset: uint256(uint160(tokenB)),
+            makingAmount: 1000 * 1e18,
+            takingAmount: 1000 * 1e18,
+            makerTraits: 0
+        });
+        
+        ConcentratedLiquidityHook.ConcentratedLiquidityParams memory params = 
+            ConcentratedLiquidityHook.ConcentratedLiquidityParams({
+                tickLower: -1000,
+                tickUpper: 1000,
+                feeTier: 3000,
+                amount0Desired: 1000 * 1e18,
+                amount1Desired: 1000 * 1e18,
+                amount0Min: 0,
+                amount1Min: 0,
+                recipient: alice,
+                deadline: block.timestamp + 1 hours
+            });
+        
+        // Calculate taking amount
+        uint256 takingAmount = liquidityHook.getTakingAmount(
+            order,
+            "",
+            ORDER_HASH,
+            alice,
+            500 * 1e18,
+            0,
+            abi.encode(params)
+        );
+        
+        // Should be proportional
+        assertEq(takingAmount, 500 * 1e18);
+    }
+    
+    function testConfigureStrategy() public {
+        vm.startPrank(alice);
+        
+        bytes memory config = abi.encode(60, 5, 10000); // defaultTickSpacing, maxPositionsPerOrder, minLiquidityAmount
+        
+        bytes32 configId = liquidityHook.configureStrategy(
+            IAdvancedStrategy.StrategyType.ConcentratedLiquidity,
+            config
+        );
+        
+        assertEq(configId != bytes32(0), true);
+        
+        vm.stopPrank();
+    }
+    
+    function testExecuteStrategy() public {
+        vm.startPrank(alice);
+        
+        // Create test order
+        IOrderMixin.Order memory order = IOrderMixin.Order({
+            salt: 1,
+            maker: uint256(uint160(alice)),
+            receiver: uint256(uint160(alice)),
+            makerAsset: uint256(uint160(tokenA)),
+            takerAsset: uint256(uint160(tokenB)),
+            makingAmount: 1000 * 1e18,
+            takingAmount: 1000 * 1e18,
+            makerTraits: 0
+        });
+        
+        ConcentratedLiquidityHook.ConcentratedLiquidityParams memory params = 
+            ConcentratedLiquidityHook.ConcentratedLiquidityParams({
+                tickLower: -1000,
+                tickUpper: 1000,
+                feeTier: 3000,
+                amount0Desired: 1000 * 1e18,
+                amount1Desired: 1000 * 1e18,
+                amount0Min: 0,
+                amount1Min: 0,
+                recipient: alice,
+                deadline: block.timestamp + 1 hours
+            });
+        
+        // Execute strategy
+        (bool success, bytes memory result) = liquidityHook.executeStrategy(
+            order,
+            ORDER_HASH,
+            alice,
+            abi.encode(params)
+        );
+        
+        assertEq(success, true);
+        
+        // Decode result
+        (uint256 executedAmount) = abi.decode(result, (uint256));
+        assertGt(executedAmount, 0);
+        
+        vm.stopPrank();
+    }
+    
+    function testValidateStrategy() public {
+        vm.startPrank(alice);
+        
+        ConcentratedLiquidityHook.ConcentratedLiquidityParams memory params = 
+            ConcentratedLiquidityHook.ConcentratedLiquidityParams({
+                tickLower: -1000,
+                tickUpper: 1000,
+                feeTier: 3000,
+                amount0Desired: 1000 * 1e18,
+                amount1Desired: 1000 * 1e18,
+                amount0Min: 0,
+                amount1Min: 0,
+                recipient: alice,
+                deadline: block.timestamp + 1 hours
+            });
+        
+        // Should be valid when deadline hasn't passed
+        bool isValid = liquidityHook.validateStrategy(ORDER_HASH, alice, abi.encode(params));
+        assertEq(isValid, true);
+        
+        // Test with expired deadline
+        params.deadline = block.timestamp - 1;
+        isValid = liquidityHook.validateStrategy(ORDER_HASH, alice, abi.encode(params));
+        assertEq(isValid, false);
+        
+        vm.stopPrank();
+    }
+    
+    function testRemoveLiquidity() public {
+        vm.startPrank(alice);
+        
+        // First add liquidity
+        ConcentratedLiquidityHook.ConcentratedLiquidityParams memory params = 
+            ConcentratedLiquidityHook.ConcentratedLiquidityParams({
+                tickLower: -1000,
+                tickUpper: 1000,
+                feeTier: 3000,
+                amount0Desired: 1000 * 1e18,
+                amount1Desired: 1000 * 1e18,
+                amount0Min: 0,
+                amount1Min: 0,
+                recipient: alice,
+                deadline: block.timestamp + 1 hours
+            });
+        
+        bytes32 positionId = liquidityHook.addLiquidity(ORDER_HASH, alice, params);
+        
+        // Remove liquidity
+        (uint256 amount0, uint256 amount1) = liquidityHook.removeLiquidity(
+            positionId,
+            100000, // liquidity to remove
+            0,      // amount0Min
+            0       // amount1Min
+        );
+        
+        assertGt(amount0, 0);
+        assertGt(amount1, 0);
+        
+        vm.stopPrank();
+    }
+}
