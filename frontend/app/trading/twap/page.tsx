@@ -1,52 +1,142 @@
 'use client'
 
 import { useState } from 'react'
-import { useAccount, useContractWrite, useTransaction, useWriteContract } from 'wagmi'
-import { parseEther, parseUnits } from 'viem'
+import { 
+  useAccount, 
+  useWriteContract, 
+  useWaitForTransactionReceipt,
+  useReadContract,
+  useChainId 
+} from 'wagmi'
+import { parseEther, parseUnits, encodeFunctionData } from 'viem'
+import { polygon } from 'wagmi/chains'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { TokenInput } from '@/components/token-input'
 import { TWAPEngineABI } from '@/util/contracts/abis'
-import { getContractAddress } from '@/util/contracts/addresses'
-import { AlertCircle, TrendingUp, Clock, Shield } from 'lucide-react'
+import { POLYGON_CONTRACTS } from '@/lib/contracts/polygon-addresses'
+import { AlertCircle, TrendingUp, Clock, Shield, Loader2 } from 'lucide-react'
 import { Token } from '@/hooks/useTokenList'
 import { toast } from 'sonner'
 
 export default function TWAPStrategyPage() {
   const { address, isConnected } = useAccount()
+  const chainId = useChainId()
   const [duration, setDuration] = useState('3600')
   const [intervals, setIntervals] = useState('10')
-  const [priceDeviation, setPriceDeviation] = useState('200')
+  const [priceDeviation, setPriceDeviation] = useState('500') // 5%
   const [amount, setAmount] = useState('')
   const [sellToken, setSellToken] = useState<Token>()
   const [buyToken, setBuyToken] = useState<Token>()
+  const [enableRandomization, setEnableRandomization] = useState(true)
+  const [activeConfigId, setActiveConfigId] = useState<string>()
 
-  const { writeContract } = useWriteContract()
+  const isPolygon = chainId === polygon.id
 
-  const handleCreateTWAP = () => {
+  // Configure TWAP write contract
+  const { 
+    data: configureTxHash,
+    writeContract: configureTWAP,
+    isPending: isConfiguring 
+  } = useWriteContract()
 
-    writeContract({
+  // Wait for configuration transaction
+  const { 
+    isLoading: isConfirming,
+    isSuccess: isConfigured 
+  } = useWaitForTransactionReceipt({
+    hash: configureTxHash,
+  })
+
+  // Read TWAP status
+  const { data: twapStatus } = useReadContract({
+    address: POLYGON_CONTRACTS.contracts.twapEngine,
+    abi: TWAPEngineABI,
+    functionName: 'getTWAPStatus',
+    args: activeConfigId ? [activeConfigId as `0x${string}`] : undefined,
+    chainId: polygon.id,
+    query: {
+      enabled: !!activeConfigId && isPolygon,
+    }
+  })
+
+  // Execute TWAP interval
+  const {
+    data: executeTxHash,
+    writeContract: executeTWAPInterval,
+    isPending: isExecuting
+  } = useWriteContract()
+
+  const handleCreateTWAP = async () => {
+    if (!isPolygon) {
+      toast.error('Please switch to Polygon network')
+      return
+    }
+
+    if (!sellToken || !buyToken || !amount) {
+      toast.error('Please fill in all fields')
+      return
+    }
+
+    try {
+      const amountInWei = parseUnits(amount, sellToken.decimals)
+      
+      configureTWAP({
+        address: POLYGON_CONTRACTS.contracts.twapEngine,
+        abi: TWAPEngineABI,
+        functionName: 'configureTWAP',
+        args: [
+          amountInWei,
+          BigInt(intervals),
+          BigInt(duration),
+          BigInt(priceDeviation),
+          enableRandomization
+        ],
+        chainId: polygon.id,
+      }, {
+        onSuccess: (hash) => {
+          toast.success('TWAP configuration transaction submitted')
+        },
+        onError: (error) => {
+          console.error('TWAP configuration failed:', error)
+          toast.error(error.message || 'Failed to configure TWAP')
+        }
+      })
+    } catch (error) {
+      console.error('Error preparing TWAP:', error)
+      toast.error('Failed to prepare TWAP configuration')
+    }
+  }
+
+  const handleExecuteInterval = async () => {
+    if (!activeConfigId) return
+
+    // In a real implementation, you would fetch the current price from an oracle
+    const mockCurrentPrice = parseEther('1')
+
+    executeTWAPInterval({
+      address: POLYGON_CONTRACTS.contracts.twapEngine,
       abi: TWAPEngineABI,
-      address: getContractAddress(1, 'twapEngine'),
-      functionName: 'createTWAPConfig',
+      functionName: 'executeTWAPInterval',
       args: [
-        BigInt(duration),
-        BigInt(intervals),
-        BigInt(priceDeviation),
+        activeConfigId as `0x${string}`,
+        mockCurrentPrice
       ],
+      chainId: polygon.id,
     }, {
-      onSuccess: (data) => {
-        console.log("TWAP order created", data)
-        toast('TWAP order created successfully!')
+      onSuccess: () => {
+        toast.success('TWAP interval executed successfully')
       },
       onError: (error) => {
-        console.log("TWAP order creation failed", error)
-        toast.error('TWAP order creation failed!')
+        toast.error(error.message || 'Failed to execute interval')
       }
     })
   }
+
+  const isLoading = isConfiguring || isConfirming
 
   return (
     <div className="container py-10">
@@ -54,8 +144,14 @@ export default function TWAPStrategyPage() {
         <div className="space-y-2">
           <h1 className="text-3xl font-bold tracking-tight">TWAP Strategy</h1>
           <p className="text-muted-foreground">
-            Time-Weighted Average Price execution with MEV protection
+            Time-Weighted Average Price execution with MEV protection on Polygon
           </p>
+          {!isPolygon && (
+            <div className="rounded-lg bg-yellow-50 dark:bg-yellow-950 p-4 text-sm">
+              <AlertCircle className="h-4 w-4 inline mr-2" />
+              Please switch to Polygon network to use this feature
+            </div>
+          )}
         </div>
 
         <div className="grid gap-6 md:grid-cols-2">
@@ -120,8 +216,19 @@ export default function TWAPStrategyPage() {
                   onChange={(e) => setPriceDeviation(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Maximum allowed price change (100 = 1%)
+                  Maximum allowed price change (100 = 1%, 500 = 5%)
                 </p>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="randomization"
+                  checked={enableRandomization}
+                  onCheckedChange={setEnableRandomization}
+                />
+                <Label htmlFor="randomization" className="cursor-pointer">
+                  Enable MEV protection (randomized execution)
+                </Label>
               </div>
 
               {!isConnected ? (
@@ -133,16 +240,28 @@ export default function TWAPStrategyPage() {
                 <Button
                   className="w-full"
                   onClick={handleCreateTWAP}
-                  disabled={!amount || !sellToken || !buyToken}
+                  disabled={!amount || !sellToken || !buyToken || isLoading || !isPolygon}
                 >
-                  Create TWAP Order
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {isConfiguring ? 'Configuring...' : 'Confirming...'}
+                    </>
+                  ) : (
+                    'Configure TWAP Order'
+                  )}
                 </Button>
               )}
 
+              {isConfigured && (
+                <div className="rounded-lg bg-green-50 dark:bg-green-950 p-4 text-sm text-green-600 dark:text-green-400">
+                  TWAP order configured successfully! You can now execute intervals.
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {/* Info Card */}
+          {/* Info Cards */}
           <div className="space-y-4">
             <Card>
               <CardHeader>
@@ -175,6 +294,10 @@ export default function TWAPStrategyPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Network:</span>
+                    <span className="font-medium">Polygon</span>
+                  </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Sell Token:</span>
                     <span className="font-medium">{sellToken?.symbol || 'Not selected'}</span>
@@ -211,31 +334,59 @@ export default function TWAPStrategyPage() {
                     <span className="text-muted-foreground">Max Deviation:</span>
                     <span className="font-medium">{Number(priceDeviation) / 100}%</span>
                   </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">MEV Protection:</span>
+                    <span className="font-medium">{enableRandomization ? 'Enabled' : 'Disabled'}</span>
+                  </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Estimated Gas</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Per Execution:</span>
-                    <span className="font-medium">~100,000 gas</span>
+            {/* Active TWAP Status */}
+            {twapStatus && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Active TWAP Status</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Executed Amount:</span>
+                      <span className="font-medium">
+                        {twapStatus.execution?.executedAmount || '0'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Remaining:</span>
+                      <span className="font-medium">
+                        {twapStatus.remainingAmount || '0'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Next Interval:</span>
+                      <span className="font-medium">
+                        {new Date(Number(twapStatus.nextIntervalTime) * 1000).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <Button
+                      className="w-full mt-4"
+                      onClick={handleExecuteInterval}
+                      disabled={isExecuting}
+                      variant="secondary"
+                    >
+                      {isExecuting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Executing...
+                        </>
+                      ) : (
+                        'Execute Next Interval'
+                      )}
+                    </Button>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Total Executions:</span>
-                    <span className="font-medium">{intervals}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Total Gas:</span>
-                    <span className="font-medium">~{Number(intervals) * 100000} gas</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </div>

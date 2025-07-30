@@ -14,7 +14,6 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,mdx}\" --cache"
   },
   "dependencies": {
-    "motion": "^12.23.11",
     "@radix-ui/react-dialog": "^1.1.14",
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-select": "^2.2.5",
@@ -24,10 +23,12 @@
     "@tanstack/react-query": "^5.83.0",
     "class-variance-authority": "^0.4.0",
     "clsx": "^1.2.1",
+    "dotenv": "^17.2.1",
     "encoding": "^0.1.13",
     "framer-motion": "^12.23.7",
     "lightweight-charts": "^5.0.8",
     "lucide-react": "0.105.0-alpha.4",
+    "motion": "^12.23.11",
     "next": "^13.4.8",
     "next-themes": "^0.4.6",
     "pino-pretty": "^13.0.0",

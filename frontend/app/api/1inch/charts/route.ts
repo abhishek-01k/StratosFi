@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 export async function GET(request: NextRequest) {
     try {
@@ -21,7 +24,10 @@ export async function GET(request: NextRequest) {
         }
 
         const apiKey = process.env.ONEINCH_API_KEY;
+
+
         if (!apiKey) {
+            console.log(process.env.ONEINCH_API_KEY,"APIKEY");
             console.error('1inch API key not configured');
             return NextResponse.json(
                 {

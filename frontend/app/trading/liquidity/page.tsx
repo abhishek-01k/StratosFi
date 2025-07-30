@@ -1,15 +1,21 @@
 'use client'
 
 import { useState } from 'react'
-import { useAccount, useContractWrite, useContractRead, useTransaction } from 'wagmi'
-import { parseEther } from 'viem'
+import { 
+  useAccount, 
+  useWriteContract, 
+  useWaitForTransactionReceipt,
+  useChainId 
+} from 'wagmi'
+import { polygon } from 'wagmi/chains'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ConcentratedLiquidityHookABI } from '@/util/contracts/abis'
-import { getContractAddress } from '@/util/contracts/addresses'
-import { AlertCircle, Layers, DollarSign, Activity } from 'lucide-react'
+import { POLYGON_CONTRACTS } from '@/lib/contracts/polygon-addresses'
+import { AlertCircle, Layers, DollarSign, Activity, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 const FEE_TIERS = [
   { value: 500, label: '0.05%', description: 'Best for stable pairs' },
@@ -19,11 +25,14 @@ const FEE_TIERS = [
 
 export default function ConcentratedLiquidityPage() {
   const { address, isConnected } = useAccount()
+  const chainId = useChainId()
   const [minPrice, setMinPrice] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
   const [currentPrice, setCurrentPrice] = useState('1500')
   const [feeTier, setFeeTier] = useState('3000')
   const [amount, setAmount] = useState('')
+
+  const isPolygon = chainId === polygon.id
 
   // Calculate ticks from prices
   const calculateTick = (price: string) => {
@@ -35,30 +44,59 @@ export default function ConcentratedLiquidityPage() {
   const tickLower = calculateTick(minPrice)
   const tickUpper = calculateTick(maxPrice)
 
-  const { data, write } = useContractWrite({
-    address: getContractAddress(1, 'concentratedLiquidityHook'),
-    abi: ConcentratedLiquidityHookABI,
-    functionName: 'createLiquidityPosition',
+  const { 
+    data: hash,
+    writeContract: createPosition,
+    isPending: isCreating 
+  } = useWriteContract()
+
+  const { 
+    isLoading: isConfirming, 
+    isSuccess: isCreateSuccess 
+  } = useWaitForTransactionReceipt({
+    hash,
   })
 
-  const { isLoading, isSuccess } = useTransaction({
-    hash: data?.hash,
-  })
+  const handleCreatePosition = async () => {
+    if (!isPolygon) {
+      toast.error('Please switch to Polygon network')
+      return
+    }
 
-  const handleCreatePosition = () => {
-    if (!write) return
-    
-    write({
-      args: [
-        tickLower,
-        tickUpper,
-        Number(feeTier),
-      ],
-    })
+    if (!minPrice || !maxPrice || !feeTier) {
+      toast.error('Please fill in all required fields')
+      return
+    }
+
+    try {
+      createPosition({
+        address: POLYGON_CONTRACTS.contracts.concentratedLiquidityHook,
+        abi: ConcentratedLiquidityHookABI,
+        functionName: 'createLiquidityPosition',
+        args: [
+          tickLower,
+          tickUpper,
+          Number(feeTier),
+        ],
+        chainId: polygon.id,
+      }, {
+        onSuccess: (hash) => {
+          toast.success('Liquidity position creation transaction submitted')
+        },
+        onError: (error) => {
+          console.error('Create position failed:', error)
+          toast.error(error.message || 'Failed to create liquidity position')
+        }
+      })
+    } catch (error) {
+      console.error('Error creating position:', error)
+      toast.error('Failed to prepare position creation')
+    }
   }
 
   const priceRange = minPrice && maxPrice ? ((Number(maxPrice) - Number(minPrice)) / Number(currentPrice) * 100).toFixed(2) : '0'
   const isInRange = minPrice && maxPrice && Number(currentPrice) >= Number(minPrice) && Number(currentPrice) <= Number(maxPrice)
+  const isLoading = isCreating || isConfirming
 
   return (
     <div className="container py-10">
@@ -66,8 +104,14 @@ export default function ConcentratedLiquidityPage() {
         <div className="space-y-2">
           <h1 className="text-3xl font-bold tracking-tight">Concentrated Liquidity</h1>
           <p className="text-muted-foreground">
-            Provide liquidity within specific price ranges like Uniswap V3
+            Provide liquidity within specific price ranges like Uniswap V3 on Polygon
           </p>
+          {!isPolygon && (
+            <div className="rounded-lg bg-yellow-50 dark:bg-yellow-950 p-4 text-sm">
+              <AlertCircle className="h-4 w-4 inline mr-2" />
+              Please switch to Polygon network to use this feature
+            </div>
+          )}
         </div>
 
         <div className="grid gap-6 md:grid-cols-2">
@@ -81,7 +125,7 @@ export default function ConcentratedLiquidityPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="amount">Liquidity Amount (ETH)</Label>
+                <Label htmlFor="amount">Liquidity Amount (MATIC)</Label>
                 <Input
                   id="amount"
                   type="number"
@@ -154,13 +198,20 @@ export default function ConcentratedLiquidityPage() {
                 <Button 
                   className="w-full" 
                   onClick={handleCreatePosition}
-                  disabled={!write || isLoading || !amount || !minPrice || !maxPrice}
+                  disabled={!minPrice || !maxPrice || isLoading || !isPolygon}
                 >
-                  {isLoading ? 'Creating Position...' : 'Create Liquidity Position'}
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {isCreating ? 'Creating...' : 'Confirming...'}
+                    </>
+                  ) : (
+                    'Create Liquidity Position'
+                  )}
                 </Button>
               )}
 
-              {isSuccess && (
+              {isCreateSuccess && (
                 <div className="rounded-lg bg-green-50 dark:bg-green-950 p-4 text-sm text-green-600 dark:text-green-400">
                   Liquidity position created successfully!
                 </div>

@@ -1,50 +1,80 @@
 export const TWAPEngineABI = [
   {
     inputs: [
-      { name: "order", type: "tuple", components: [
-        { name: "salt", type: "uint256" },
-        { name: "maker", type: "address" },
-        { name: "receiver", type: "address" },
-        { name: "makerAsset", type: "address" },
-        { name: "takerAsset", type: "address" },
-        { name: "makingAmount", type: "uint256" },
-        { name: "takingAmount", type: "uint256" },
-        { name: "makerTraits", type: "uint256" }
-      ]},
-      { name: "extension", type: "bytes" },
-      { name: "orderHash", type: "bytes32" },
-      { name: "taker", type: "address" },
-      { name: "makingAmount", type: "uint256" },
-      { name: "takingAmount", type: "uint256" },
-      { name: "remainingMakingAmount", type: "uint256" },
-      { name: "extraData", type: "bytes" }
+      { name: "totalAmount", type: "uint256" },
+      { name: "intervals", type: "uint256" },
+      { name: "duration", type: "uint256" },
+      { name: "maxPriceDeviation", type: "uint256" },
+      { name: "enableRandomization", type: "bool" }
     ],
-    name: "getMakingAmount",
-    outputs: [{ name: "", type: "uint256" }],
+    name: "configureTWAP",
+    outputs: [{ name: "configId", type: "bytes32" }],
+    stateMutability: "nonpayable",
+    type: "function"
+  },
+  {
+    inputs: [
+      { name: "configId", type: "bytes32" },
+      { name: "currentPrice", type: "uint256" }
+    ],
+    name: "executeTWAPInterval",
+    outputs: [{ name: "executedAmount", type: "uint256" }],
+    stateMutability: "nonpayable",
+    type: "function"
+  },
+  {
+    inputs: [
+      { name: "configId", type: "bytes32" }
+    ],
+    name: "getTWAPStatus",
+    outputs: [
+      { 
+        name: "config", 
+        type: "tuple",
+        components: [
+          { name: "totalAmount", type: "uint256" },
+          { name: "intervals", type: "uint256" },
+          { name: "startTime", type: "uint256" },
+          { name: "endTime", type: "uint256" },
+          { name: "maxPriceDeviation", type: "uint256" },
+          { name: "enableRandomization", type: "bool" },
+          { name: "randomizationFactor", type: "uint256" },
+          { name: "priceOracle", type: "address" }
+        ]
+      },
+      { 
+        name: "execution", 
+        type: "tuple",
+        components: [
+          { name: "configId", type: "bytes32" },
+          { name: "executedAmount", type: "uint256" },
+          { name: "executedIntervals", type: "uint256" },
+          { name: "lastExecutionTime", type: "uint256" },
+          { name: "lastExecutionPrice", type: "uint256" },
+          { name: "intervalAmounts", type: "uint256[]" },
+          { name: "isPaused", type: "bool" }
+        ]
+      },
+      { name: "nextIntervalTime", type: "uint256" },
+      { name: "remainingAmount", type: "uint256" }
+    ],
     stateMutability: "view",
     type: "function"
   },
   {
     inputs: [
-      { name: "duration", type: "uint256" },
-      { name: "intervals", type: "uint256" },
-      { name: "priceDeviation", type: "uint256" }
+      { name: "configId", type: "bytes32" }
     ],
-    name: "createTWAPConfig",
-    outputs: [{ name: "", type: "bytes32" }],
-    stateMutability: "nonpayable",
-    type: "function"
-  },
-  {
-    inputs: [],
-    name: "pause",
+    name: "pauseTWAP",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function"
   },
   {
-    inputs: [],
-    name: "unpause",
+    inputs: [
+      { name: "configId", type: "bytes32" }
+    ],
+    name: "resumeTWAP",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function"
@@ -54,92 +84,87 @@ export const TWAPEngineABI = [
 export const OptionsProtocolABI = [
   {
     inputs: [
-      { name: "order", type: "tuple", components: [
-        { name: "salt", type: "uint256" },
-        { name: "maker", type: "address" },
-        { name: "receiver", type: "address" },
-        { name: "makerAsset", type: "address" },
-        { name: "takerAsset", type: "address" },
-        { name: "makingAmount", type: "uint256" },
-        { name: "takingAmount", type: "uint256" },
-        { name: "makerTraits", type: "uint256" }
-      ]},
-      { name: "extension", type: "bytes" },
       { name: "orderHash", type: "bytes32" },
-      { name: "taker", type: "address" },
-      { name: "makingAmount", type: "uint256" },
-      { name: "takingAmount", type: "uint256" },
-      { name: "remainingMakingAmount", type: "uint256" },
-      { name: "extraData", type: "bytes" }
+      { name: "strikePrice", type: "uint256" },
+      { name: "expiration", type: "uint256" },
+      { name: "premium", type: "uint256" }
     ],
-    name: "getMakingAmount",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
+    name: "createCallOption",
+    outputs: [{ name: "optionId", type: "bytes32" }],
+    stateMutability: "payable",
     type: "function"
   },
   {
     inputs: [
       { name: "orderHash", type: "bytes32" },
-      { name: "optionType", type: "uint8" },
-      { name: "premium", type: "uint256" },
-      { name: "expiration", type: "uint256" }
+      { name: "strikePrice", type: "uint256" },
+      { name: "expiration", type: "uint256" },
+      { name: "premium", type: "uint256" }
     ],
-    name: "createOption",
+    name: "createPutOption",
+    outputs: [{ name: "optionId", type: "bytes32" }],
+    stateMutability: "payable",
+    type: "function"
+  },
+  {
+    inputs: [
+      { name: "optionId", type: "bytes32" }
+    ],
+    name: "exerciseOption",
+    outputs: [{ name: "profit", type: "uint256" }],
+    stateMutability: "nonpayable",
+    type: "function"
+  },
+  {
+    inputs: [
+      { name: "optionId", type: "bytes32" }
+    ],
+    name: "getOptionGreeks",
+    outputs: [
+      {
+        name: "greeks",
+        type: "tuple",
+        components: [
+          { name: "delta", type: "int256" },
+          { name: "gamma", type: "int256" },
+          { name: "theta", type: "int256" },
+          { name: "vega", type: "int256" },
+          { name: "intrinsicValue", type: "uint256" },
+          { name: "timeValue", type: "uint256" }
+        ]
+      }
+    ],
+    stateMutability: "view",
+    type: "function"
+  },
+  {
+    inputs: [],
+    name: "depositCollateral",
     outputs: [],
     stateMutability: "payable",
     type: "function"
   },
   {
     inputs: [
-      { name: "orderHash", type: "bytes32" }
+      { name: "amount", type: "uint256" }
     ],
-    name: "exerciseOption",
+    name: "withdrawCollateral",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function"
   },
   {
     inputs: [
-      { name: "orderHash", type: "bytes32" }
+      { name: "user", type: "address" }
     ],
-    name: "calculateGreeks",
-    outputs: [
-      { name: "delta", type: "uint256" },
-      { name: "gamma", type: "uint256" },
-      { name: "theta", type: "uint256" },
-      { name: "vega", type: "uint256" }
-    ],
+    name: "collateralBalances",
+    outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
     type: "function"
   }
 ] as const
 
 export const ConcentratedLiquidityHookABI = [
-  {
-    inputs: [
-      { name: "order", type: "tuple", components: [
-        { name: "salt", type: "uint256" },
-        { name: "maker", type: "address" },
-        { name: "receiver", type: "address" },
-        { name: "makerAsset", type: "address" },
-        { name: "takerAsset", type: "address" },
-        { name: "makingAmount", type: "uint256" },
-        { name: "takingAmount", type: "uint256" },
-        { name: "makerTraits", type: "uint256" }
-      ]},
-      { name: "extension", type: "bytes" },
-      { name: "orderHash", type: "bytes32" },
-      { name: "taker", type: "address" },
-      { name: "makingAmount", type: "uint256" },
-      { name: "takingAmount", type: "uint256" },
-      { name: "remainingMakingAmount", type: "uint256" },
-      { name: "extraData", type: "bytes" }
-    ],
-    name: "getMakingAmount",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function"
-  },
   {
     inputs: [
       { name: "tickLower", type: "int24" },
@@ -164,41 +189,44 @@ export const ConcentratedLiquidityHookABI = [
 
 export const VolatilityOracleABI = [
   {
-    inputs: [
-      { name: "token", type: "address" }
-    ],
-    name: "getRiskScore",
+    inputs: [],
+    name: "getCurrentVolatility",
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
     type: "function"
   },
   {
-    inputs: [
-      { name: "token", type: "address" }
+    inputs: [],
+    name: "getRiskMetrics",
+    outputs: [
+      {
+        name: "metrics",
+        type: "tuple",
+        components: [
+          { name: "riskScore", type: "uint256" },
+          { name: "isHighRisk", type: "bool" },
+          { name: "adjustmentFactor", type: "uint256" },
+          { name: "recommendedInterval", type: "uint256" }
+        ]
+      }
     ],
-    name: "getVolatilityCategory",
-    outputs: [{ name: "", type: "uint8" }],
     stateMutability: "view",
     type: "function"
   },
   {
     inputs: [
-      { name: "token", type: "address" },
-      { name: "basePosition", type: "uint256" }
+      { name: "newVolatility", type: "uint256" }
     ],
-    name: "getRecommendedPositionSize",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function"
-  },
-  {
-    inputs: [
-      { name: "token", type: "address" },
-      { name: "price", type: "uint256" }
-    ],
-    name: "updatePrice",
+    name: "updateVolatility",
     outputs: [],
     stateMutability: "nonpayable",
+    type: "function"
+  },
+  {
+    inputs: [],
+    name: "getVolatilityCategory",
+    outputs: [{ name: "", type: "string" }],
+    stateMutability: "view",
     type: "function"
   }
 ] as const
@@ -220,25 +248,26 @@ export const AdvancedStrategyRouterABI = [
     ],
     name: "getUserStats",
     outputs: [
-      { name: "totalOrders", type: "uint256" },
-      { name: "successfulOrders", type: "uint256" },
-      { name: "totalVolume", type: "uint256" }
+      { name: "totalExecutions", type: "uint256" },
+      { name: "totalVolume", type: "uint256" },
+      { name: "averageGasUsed", type: "uint256" },
+      { name: "successRate", type: "uint256" }
     ],
     stateMutability: "view",
     type: "function"
   },
   {
     inputs: [],
-    name: "protocolFee",
+    name: "protocolFeeRate",
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
     type: "function"
   },
   {
     inputs: [
-      { name: "newFee", type: "uint256" }
+      { name: "newFeeRate", type: "uint256" }
     ],
-    name: "setProtocolFee",
+    name: "updateProtocolFee",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function"
