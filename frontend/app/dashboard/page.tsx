@@ -1,6 +1,6 @@
 'use client'
 
-import { useAccount, useContractRead } from 'wagmi'
+import { useAccount, useReadContract } from 'wagmi'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { VolatilityOracleABI, AdvancedStrategyRouterABI } from '@/util/contracts/abis'
 import { getContractAddress } from '@/util/contracts/addresses'
@@ -13,37 +13,33 @@ export default function DashboardPage() {
   const { address, isConnected } = useAccount()
 
   // Mock token addresses for demo
-  const tokenAddress = '0x0000000000000000000000000000000000000000'
+  const tokenAddress = '0x0000000000000000000000000000000000000000';
 
-  const { data: riskScore } = useContractRead({
+  const { data: riskScore } = useReadContract({
     address: getContractAddress(1, 'volatilityOracle'),
     abi: VolatilityOracleABI,
     functionName: 'getRiskScore',
     args: [tokenAddress],
-    enabled: isConnected,
   })
 
-  const { data: volatilityCategory } = useContractRead({
+  const { data: volatilityCategory } = useReadContract({
     address: getContractAddress(1, 'volatilityOracle'),
     abi: VolatilityOracleABI,
     functionName: 'getVolatilityCategory',
     args: [tokenAddress],
-    enabled: isConnected,
   })
 
-  const { data: userStats } = useContractRead({
+  const { data: userStats } = useReadContract({
     address: getContractAddress(1, 'advancedStrategyRouter'),
     abi: AdvancedStrategyRouterABI,
     functionName: 'getUserStats',
     args: address ? [address] : undefined,
-    enabled: isConnected && !!address,
   })
 
-  const { data: protocolFee } = useContractRead({
+  const { data: protocolFee } = useReadContract({
     address: getContractAddress(1, 'advancedStrategyRouter'),
     abi: AdvancedStrategyRouterABI,
     functionName: 'protocolFee',
-    enabled: isConnected,
   })
 
   const volatilityCategoryIndex = volatilityCategory ?? 1
