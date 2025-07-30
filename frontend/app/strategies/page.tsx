@@ -6,22 +6,26 @@ import { useChartData } from "@/hooks/useChartData"
 import { TradingChart } from "@/components/strategies/trading-chart"
 import TokenPairComponent from "@/components/strategies/TokenPairComponent"
 import SelectStrategyComponent from "@/components/strategies/SelectStrategyComponent"
+import { useAccount } from "wagmi"
 
 export default function StrategiesPage() {
+    const { chainId } = useAccount();
     const {
         fromToken,
         toToken,
         period,
+
     } = useStrategies()
 
     const { data, isLoading, error } = useChartData({
         fromToken: fromToken.address,
         toToken: toToken.address,
         period,
+        chainId: chainId?.toString()
     })
 
     return (
-        <div className="min-h-screen bg-background p-4">
+        <div className="bg-background min-h-screen p-4">
             <div className="mx-auto max-w-7xl">
                 <h1 className="mb-8 text-3xl font-bold">Trading Strategies</h1>
 
