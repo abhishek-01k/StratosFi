@@ -6,7 +6,7 @@ import {
     Layers,
     Activity
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@/util/utils';
 import { GlowingEffect } from '../ui/glowing-effect';
 
 const Features = () => {
