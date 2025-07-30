@@ -108,8 +108,10 @@ const StrategiesContext = createContext<StrategiesContextType>(defaultContext);
 export const StrategiesProvider = ({ children }: { children: ReactNode }) => {
     const { chainId } = useAccount();
     const effectiveChainId = chainId ?? 1;
+    console.log("effectiveChainId", effectiveChainId);
 
     const tokens: TokensData[] = TOKENS_BY_CHAIN[effectiveChainId]
+    console.log("tokens", tokens);
 
     const [fromToken, setFromToken] = useState<TokensData>(() => tokens[0]);
     const [toToken, setToToken] = useState<TokensData>(() => tokens[1]);
