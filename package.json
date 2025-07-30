@@ -1,0 +1,32 @@
+{
+  "name": "oneinch-advanced-strategies",
+  "version": "1.0.0",
+  "description": "Advanced DeFi strategies built on 1inch Limit Order Protocol",
+  "scripts": {
+    "build": "forge build",
+    "generate-abis": "forge build && node generate-abis.js",
+    "test": "forge test",
+    "deploy:polygon": "forge script script/DeployToPolygon.s.sol --rpc-url $POLYGON_RPC_URL --broadcast --verify",
+    "frontend:dev": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/oneinch-advanced-strategies.git"
+  },
+  "keywords": [
+    "defi",
+    "1inch",
+    "limit-orders",
+    "twap",
+    "options",
+    "volatility",
+    "polygon",
+    "foundry"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  }
+} 
