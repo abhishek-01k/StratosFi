@@ -14,6 +14,7 @@ import { useWriteContract } from 'wagmi';
 import { TWAPEngineABI } from '@/util/contracts/abis';
 import { getContractAddress } from '@/util/contracts/addresses';
 import { toast } from 'sonner'
+import { parseEther } from 'viem';
 
 const TwapStrategy = () => {
     const { fromToken, toToken, amount, twapParams, setTwapParams } = useStrategies();
@@ -23,14 +24,21 @@ const TwapStrategy = () => {
         console.log("Twap Params", twapParams);
         console.log("Other params", fromToken, toToken, amount);
 
+        if (!amount) {
+            toast.error('Please enter an amount');
+            return;
+        }
+
         writeContract({
             abi: TWAPEngineABI,
             address: getContractAddress(1, 'twapEngine'),
-            functionName: 'createTWAPConfig',
+            functionName: 'configureTWAP',
             args: [
-                BigInt(twapParams.duration),
-                BigInt(twapParams.interval),
-                BigInt(twapParams.maxPriceDeviation),
+                parseEther(amount), // totalAmount
+                BigInt(twapParams.interval), // intervals
+                BigInt(twapParams.duration), // duration
+                BigInt(twapParams.maxPriceDeviation), // maxPriceDeviation
+                true // enableRandomization
             ],
         }, {
             onSuccess: (data) => {

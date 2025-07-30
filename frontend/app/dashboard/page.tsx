@@ -15,18 +15,16 @@ export default function DashboardPage() {
   // Mock token addresses for demo
   const tokenAddress = '0x0000000000000000000000000000000000000000';
 
-  const { data: riskScore } = useReadContract({
+  const { data: riskMetrics } = useReadContract({
     address: getContractAddress(1, 'volatilityOracle'),
     abi: VolatilityOracleABI,
-    functionName: 'getRiskScore',
-    args: [tokenAddress],
+    functionName: 'getRiskMetrics',
   })
 
   const { data: volatilityCategory } = useReadContract({
     address: getContractAddress(1, 'volatilityOracle'),
     abi: VolatilityOracleABI,
     functionName: 'getVolatilityCategory',
-    args: [tokenAddress],
   })
 
   const { data: userStats } = useReadContract({
@@ -39,12 +37,21 @@ export default function DashboardPage() {
   const { data: protocolFee } = useReadContract({
     address: getContractAddress(1, 'advancedStrategyRouter'),
     abi: AdvancedStrategyRouterABI,
-    functionName: 'protocolFee',
+    functionName: 'protocolFeeRate',
   })
 
-  const volatilityCategoryIndex = volatilityCategory ?? 1
+  // Map volatility category string to index
+  let volatilityCategoryIndex = 1 // default to NORMAL
+  if (volatilityCategory === 'LOW') volatilityCategoryIndex = 0
+  else if (volatilityCategory === 'NORMAL') volatilityCategoryIndex = 1
+  else if (volatilityCategory === 'HIGH') volatilityCategoryIndex = 2
+  else if (volatilityCategory === 'EXTREME') volatilityCategoryIndex = 3
+  
   const volatilityCategoryName = VOLATILITY_CATEGORIES[volatilityCategoryIndex]
   const volatilityCategoryColor = VOLATILITY_COLORS[volatilityCategoryIndex]
+  
+  // Extract risk score from risk metrics
+  const riskScore = riskMetrics?.riskScore
 
   return (
     <div className="container py-10">

@@ -17,7 +17,7 @@ const OptionsStrategy = () => {
     const { writeContract } = useWriteContract()
     const { data: greeksData, isLoading: loadingGreeksData } = useReadContract({
         abi: OptionsProtocolABI,
-        functionName: "calculateGreeks",
+        functionName: "getOptionGreeks",
         args: orderHash ? [orderHash as `0x${string}`] : undefined
     })
 
@@ -25,15 +25,22 @@ const OptionsStrategy = () => {
         console.log("Options Params", optionStrategyParams);
         console.log("Other params", fromToken, toToken, amount);
 
+        if (!orderHash || !premium || !strikePrice) {
+            toast.error('Please fill in all required fields');
+            return;
+        }
+
+        const functionName = optionType === 'call' ? 'createCallOption' : 'createPutOption';
+        
         writeContract({
             abi: OptionsProtocolABI,
             address: getContractAddress(1, 'optionsProtocol'),
-            functionName: 'createOption',
+            functionName: functionName,
             args: [
                 orderHash as `0x${string}`,
-                optionType === 'call' ? 0 : 1,
-                parseEther(premium),
+                parseEther(strikePrice),
                 BigInt(Math.floor(Date.now() / 1000) + Number(expiration)),
+                parseEther(premium)
             ],
             value: parseEther(premium),
         }, {
@@ -43,7 +50,7 @@ const OptionsStrategy = () => {
             },
             onError: (error) => {
                 console.log("Option Creation failed", error)
-                toast.error('TWAP order creation failed!')
+                toast.error('Option creation failed!')
             }
         })
     }
@@ -51,6 +58,11 @@ const OptionsStrategy = () => {
     const handleExerciseData = async () => {
         console.log("Options Params", optionStrategyParams);
         console.log("Other params", fromToken, toToken, amount);
+
+        if (!orderHash) {
+            toast.error('Please enter an order hash');
+            return;
+        }
 
         writeContract({
             abi: OptionsProtocolABI,
@@ -62,11 +74,11 @@ const OptionsStrategy = () => {
         }, {
             onSuccess: (data) => {
                 console.log("Exercise Data in options called", data)
-                toast('Exercise data func returned success!')
+                toast('Option exercised successfully!')
             },
             onError: (error) => {
                 console.log("Exercise Data fetching failed", error)
-                toast.error('Exercise data failed!')
+                toast.error('Exercise failed!')
             }
         })
     }
