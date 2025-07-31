@@ -175,6 +175,52 @@ forge test --fork-url $MAINNET_RPC
 | TWAP Execution | ~100k | Configurable | MEV protection |
 | Volatility Sizing | ~75k | Real-time | Up to 50% risk reduction |
 
+## 🛠 Development
+
+### Building and ABI Generation
+
+This project uses Foundry for smart contract development and includes automated ABI generation for the frontend:
+
+```bash
+# Compile contracts and generate ABIs for frontend
+npm run generate-abis
+
+# Or run individually
+forge build                # Compile contracts
+node generate-abis.js      # Extract ABIs to frontend/lib/contracts/abis/
+```
+
+The `generate-abis` script automatically:
+- Compiles all Solidity contracts using Foundry
+- Extracts ABIs from compiled artifacts in `out/` directory  
+- Generates TypeScript ABI files in `frontend/lib/contracts/abis/`
+- Creates properly typed exports for use with wagmi/viem
+
+### Frontend Development
+
+```bash
+# Start the frontend development server
+npm run frontend:dev
+
+# Build the frontend for production  
+npm run frontend:build
+```
+
+The frontend uses the latest wagmi v2 hooks with proper TypeScript typing:
+- `useReadContract` for contract reads
+- `useWriteContract` for contract writes  
+- `useWaitForTransactionReceipt` for transaction confirmations
+
+### Testing
+
+```bash
+# Run all tests
+npm run test
+
+# Deploy to Polygon testnet
+npm run deploy:polygon
+```
+
 ## 🤝 Contributing
 
 1. Fork the repository

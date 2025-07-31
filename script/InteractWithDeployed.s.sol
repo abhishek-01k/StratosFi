@@ -43,17 +43,17 @@ contract InteractWithDeployed is Script {
         // Check existing TWAP config
         bytes32 existingConfigId = 0xd370de720e8920af209d24cbc9f36bbf9001fab23564ae21503855867c2cce47;
         (
-            uint256 totalExecuted,
-            uint256 executedIntervals,
-            uint256 averagePrice,
-            bool isPaused,
-            uint256 lastExecutionTime
+            TWAPEngine.TWAPConfig memory config,
+            TWAPEngine.TWAPExecution memory execution,
+            uint256 nextIntervalTime,
+            uint256 remainingAmount
         ) = twapEngine.getTWAPStatus(existingConfigId);
         
         console.log("\nExisting TWAP Status:");
-        console.log("  Total Executed:", totalExecuted);
-        console.log("  Executed Intervals:", executedIntervals);
-        console.log("  Is Paused:", isPaused);
+        console.log("  Total Executed:", execution.executedAmount);
+        console.log("  Executed Intervals:", execution.executedIntervals);
+        console.log("  Is Paused:", execution.isPaused);
+        console.log("  Remaining Amount:", remainingAmount);
         
         // Create a new smaller TWAP config
         console.log("\nCreating new TWAP config...");
