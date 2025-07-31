@@ -7,16 +7,16 @@ export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
 
-        const fromToken = searchParams.get('fromToken');
-        const toToken = searchParams.get('toToken');
-        const period = searchParams.get('period') || '3600';
+        const address = searchParams.get('address');
+        const page = searchParams.get('page') || '1';
+        const limit = searchParams.get('limit') || '100';
         const chainId = searchParams.get('chainId') || '1';
 
-        if (!fromToken || !toToken) {
+        if (!address) {
             return NextResponse.json(
                 {
                     error: 'Missing parameters',
-                    description: 'fromToken and toToken are required',
+                    description: 'address is required',
                     statusCode: 400
                 },
                 { status: 400 }
@@ -24,7 +24,6 @@ export async function GET(request: NextRequest) {
         }
 
         const apiKey = process.env.ONEINCH_API_KEY;
-
 
         if (!apiKey) {
             console.error('1inch API key not configured');
@@ -38,7 +37,13 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        const apiUrl = `https://api.1inch.dev/charts/v1.0/chart/aggregated/candle/${fromToken}/${toToken}/${period}/${chainId}`;
+        // Build query parameters
+        const queryParams = new URLSearchParams({
+            page,
+            limit,
+        });
+
+        const apiUrl = `https://api.1inch.dev/orderbook/v4.0/${chainId}/address/${address}?${queryParams.toString()}`;
 
         const response = await fetch(apiUrl, {
             method: 'GET',
@@ -66,7 +71,7 @@ export async function GET(request: NextRequest) {
         }
 
         if (!response.ok) {
-            console.error('1inch Charts API Error:', {
+            console.error('1inch Orders API Error:', {
                 status: response.status,
                 statusText: response.statusText,
                 data,
@@ -89,7 +94,7 @@ export async function GET(request: NextRequest) {
 
             return NextResponse.json(
                 {
-                    error: data.error || 'Charts request failed',
+                    error: data.error || 'Orders request failed',
                     description: data.description || response.statusText,
                     statusCode: data.statusCode || response.status,
                     meta: data.meta,
@@ -100,7 +105,7 @@ export async function GET(request: NextRequest) {
         }
 
         const headers = new Headers({
-            'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600',
+            'Cache-Control': 'public, max-age=60, stale-while-revalidate=300',
             'Content-Type': 'application/json',
         });
 
@@ -110,7 +115,7 @@ export async function GET(request: NextRequest) {
         });
 
     } catch (error) {
-        console.error('Charts API Error:', error);
+        console.error('Orders API Error:', error);
 
         return NextResponse.json(
             {
@@ -121,4 +126,4 @@ export async function GET(request: NextRequest) {
             { status: 500 }
         );
     }
-} 
+}

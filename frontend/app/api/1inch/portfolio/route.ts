@@ -1,22 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
 
-        const fromToken = searchParams.get('fromToken');
-        const toToken = searchParams.get('toToken');
-        const period = searchParams.get('period') || '3600';
-        const chainId = searchParams.get('chainId') || '1';
+        const address = searchParams.get('address');
+        const chainId = searchParams.get('chainId') || '137';
 
-        if (!fromToken || !toToken) {
+        if (!address) {
             return NextResponse.json(
                 {
                     error: 'Missing parameters',
-                    description: 'fromToken and toToken are required',
+                    description: 'address is required',
                     statusCode: 400
                 },
                 { status: 400 }
@@ -24,7 +19,6 @@ export async function GET(request: NextRequest) {
         }
 
         const apiKey = process.env.ONEINCH_API_KEY;
-
 
         if (!apiKey) {
             console.error('1inch API key not configured');
@@ -38,7 +32,7 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        const apiUrl = `https://api.1inch.dev/charts/v1.0/chart/aggregated/candle/${fromToken}/${toToken}/${period}/${chainId}`;
+        const apiUrl = `https://api.1inch.dev/portfolio/portfolio/v5.0/general/current_value?addresses=${address}&chain_id=${chainId}`;
 
         const response = await fetch(apiUrl, {
             method: 'GET',
@@ -66,7 +60,7 @@ export async function GET(request: NextRequest) {
         }
 
         if (!response.ok) {
-            console.error('1inch Charts API Error:', {
+            console.error('1inch Portfolio API Error:', {
                 status: response.status,
                 statusText: response.statusText,
                 data,
@@ -89,7 +83,7 @@ export async function GET(request: NextRequest) {
 
             return NextResponse.json(
                 {
-                    error: data.error || 'Charts request failed',
+                    error: data.error || 'Portfolio request failed',
                     description: data.description || response.statusText,
                     statusCode: data.statusCode || response.status,
                     meta: data.meta,
@@ -110,7 +104,7 @@ export async function GET(request: NextRequest) {
         });
 
     } catch (error) {
-        console.error('Charts API Error:', error);
+        console.error('Portfolio API Error:', error);
 
         return NextResponse.json(
             {
@@ -121,4 +115,4 @@ export async function GET(request: NextRequest) {
             { status: 500 }
         );
     }
-} 
+}
