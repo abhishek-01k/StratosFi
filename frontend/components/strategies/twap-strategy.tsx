@@ -10,7 +10,7 @@ import {
 import { Button } from '../ui/button';
 import { useStrategies } from '@/context/StrategiesContext';
 import { Label } from '../ui/label';
-import { useWriteContract } from 'wagmi';
+import { useWriteContract  , useAccount} from 'wagmi';
 import { TWAPEngineABI } from '@/util/contracts/abis';
 import { getContractAddress } from '@/util/contracts/addresses';
 import { toast } from 'sonner'
@@ -19,7 +19,8 @@ import { parseEther } from 'viem';
 const TwapStrategy = () => {
     const { fromToken, toToken, amount, twapParams, setTwapParams } = useStrategies();
     const { writeContract } = useWriteContract()
-
+    const { chainId } = useAccount();
+    
     const handleTwapOrderCreation = async () => {
         console.log("Twap Params", twapParams);
         console.log("Other params", fromToken, toToken, amount);
@@ -29,9 +30,12 @@ const TwapStrategy = () => {
             return;
         }
 
+    
+        console.log("Chain ID", chainId);
+
         writeContract({
             abi: TWAPEngineABI,
-            address: getContractAddress(1, 'twapEngine'),
+            address: getContractAddress(!chainId ? 1 : chainId, 'twapEngine'),
             functionName: 'configureTWAP',
             args: [
                 parseEther(amount), // totalAmount
