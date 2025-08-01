@@ -6,7 +6,7 @@ import { useStrategies } from '@/context/StrategiesContext'
 
 interface TradingChartProps {
     height?: number
-    data: {
+    data?: {
         time: number;
         open: number;
         high: number;
@@ -28,7 +28,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({
         useStrategies()
 
     useEffect(() => {
-        if (!chartContainerRef.current) return
+        if (!chartContainerRef.current || !data || data.length === 0) return
 
         const chart = createChart(chartContainerRef.current, {
             height,
@@ -96,6 +96,23 @@ export const TradingChart: React.FC<TradingChartProps> = ({
         }
     }, [height, data])
 
+    // Handle case when data is undefined or empty
+    if (!data || data.length === 0) {
+        return (
+            <div className="bg-card rounded-lg border">
+                <div className="border-b p-4">
+                    <h3 className="text-lg font-semibold">{fromToken.symbol}/{toToken.symbol}</h3>
+                </div>
+                <div className="flex items-center justify-center p-8 text-center">
+                    <div className="text-muted-foreground">
+                        <p className="text-lg font-medium">Chart data not available</p>
+                        <p className="mt-1 text-sm">Trading data is currently unavailable for this pair</p>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
     let percentChange: number | null = null
     if (data.length >= 2) {
         const prev = data[data.length - 2].close
@@ -106,10 +123,10 @@ export const TradingChart: React.FC<TradingChartProps> = ({
     }
 
     return (
-        <div className="rounded-lg border bg-card">
+        <div className="bg-card rounded-lg border">
             <div className="border-b p-4">
                 <h3 className="text-lg font-semibold">{fromToken.symbol}/{toToken.symbol}</h3>
-                <div className="mt-2 flex items-center gap-4 text-sm text-muted-foreground">
+                <div className="text-muted-foreground mt-2 flex items-center gap-4 text-sm">
                     <span className="text-green-500">{data[data.length - 1].close}</span>
                     {percentChange !== null && (
                         <span className={percentChange >= 0 ? "text-green-500" : "text-red-500"}>
