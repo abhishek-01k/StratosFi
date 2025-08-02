@@ -1,4 +1,4 @@
-out/
+# out/
 cache/
 .vscode/
 .idea/
@@ -9,7 +9,7 @@ cache/
 .env.test.local
 .env.production.local
 
-lib/
+./lib/*
 
 broadcast/
 
