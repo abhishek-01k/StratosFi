@@ -1449,6 +1449,7 @@ name = "intents-vault"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "borsh",
  "near-gas",
  "near-sdk",
  "near-workspaces",
