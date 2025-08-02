@@ -19,8 +19,15 @@ import { TokenInput } from '@/components/token-input'
 import { TWAPEngineABI } from '@/util/contracts/abis'
 import { POLYGON_CONTRACTS } from '@/lib/contracts/polygon-addresses'
 import { AlertCircle, TrendingUp, Clock, Shield, Loader2 } from 'lucide-react'
-import { Token } from '@/hooks/useTokenList'
 import { toast } from 'sonner'
+
+type Token = {
+  name: string;
+  symbol: string;
+  address: string;
+  logo: string;
+  decimals: number;
+};
 
 export default function TWAPStrategyPage() {
   const { address, isConnected } = useAccount()
@@ -353,19 +360,19 @@ export default function TWAPStrategyPage() {
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Executed Amount:</span>
                       <span className="font-medium">
-                        {twapStatus.execution?.executedAmount || '0'}
+                        {twapStatus[1]?.executedAmount?.toString() || '0'}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Remaining:</span>
                       <span className="font-medium">
-                        {twapStatus.remainingAmount || '0'}
+                        {twapStatus[3]?.toString() || '0'}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Next Interval:</span>
                       <span className="font-medium">
-                        {new Date(Number(twapStatus.nextIntervalTime) * 1000).toLocaleTimeString()}
+                        {new Date(Number(twapStatus[2]) * 1000).toLocaleTimeString()}
                       </span>
                     </div>
                     <Button

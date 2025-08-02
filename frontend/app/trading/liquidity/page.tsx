@@ -63,7 +63,7 @@ export default function ConcentratedLiquidityPage() {
       return
     }
 
-    if (!minPrice || !maxPrice || !feeTier) {
+    if (!minPrice || !maxPrice || !feeTier || !amount) {
       toast.error('Please fill in all required fields')
       return
     }
@@ -72,11 +72,20 @@ export default function ConcentratedLiquidityPage() {
       createPosition({
         address: POLYGON_CONTRACTS.contracts.concentratedLiquidityHook,
         abi: ConcentratedLiquidityHookABI,
-        functionName: 'createLiquidityPosition',
+        functionName: 'addLiquidity',
         args: [
-          tickLower,
-          tickUpper,
-          Number(feeTier),
+          '0x0000000000000000000000000000000000000000000000000000000000000000', // orderHash
+          {
+            tickLower,
+            tickUpper,
+            feeTier: Number(feeTier),
+            amount0Desired: BigInt(Number(amount) * 1e18), // Convert to wei
+            amount1Desired: BigInt(Number(amount) * 1e18), // Convert to wei
+            amount0Min: BigInt(0),
+            amount1Min: BigInt(0),
+            recipient: address as `0x${string}`,
+            deadline: BigInt(Math.floor(Date.now() / 1000) + 3600), // 1 hour from now
+          }
         ],
         chainId: polygon.id,
       }, {
@@ -198,7 +207,7 @@ export default function ConcentratedLiquidityPage() {
                 <Button 
                   className="w-full" 
                   onClick={handleCreatePosition}
-                  disabled={!minPrice || !maxPrice || isLoading || !isPolygon}
+                  disabled={!minPrice || !maxPrice || !amount || isLoading || !isPolygon}
                 >
                   {isLoading ? (
                     <>
