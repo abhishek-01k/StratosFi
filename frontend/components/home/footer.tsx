@@ -28,7 +28,7 @@ const Footer = () => {
                                     <Zap className="size-10 text-blue-400" />
                                     <div className="absolute inset-0 rounded-full bg-blue-400/20 blur-lg"></div>
                                 </div>
-                                <span className="text-3xl font-bold text-white">1.5inch</span>
+                                <span className="text-3xl font-bold text-white">StratosFi</span>
                             </div>
 
                             <p className="max-w-md text-lg leading-relaxed text-slate-300">
@@ -81,7 +81,7 @@ const Footer = () => {
                 <div className="border-t border-slate-800 py-6">
                     <div className="flex flex-col items-center justify-between gap-4 text-sm text-slate-400 md:flex-row">
                         <div className="flex items-center space-x-6">
-                            <span>© 2024 1.5inch Protocol. All rights reserved.</span>
+                            <span>© 2024 StratosFi Protocol. All rights reserved.</span>
                         </div>
 
                         <div className="flex items-center space-x-6">

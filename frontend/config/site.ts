@@ -1,7 +1,7 @@
 export type SiteConfig = typeof siteConfig
 
 export const siteConfig = {
-  name: "1.5inch",
+  name: "StratosFi",
   description:
     "Advanced trading strategies for 1inch Limit Order Protocol including TWAP, Options, and Concentrated Liquidity",
   mainNav: [
