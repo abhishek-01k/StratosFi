@@ -53,7 +53,7 @@ An advanced DeFi protocol extending 1inch Limit Order Protocol with cutting-edge
 
 ```bash
 # Clone the repository
-git clone https://github.com/abhishek-01k
+git clone https://github.com/abhishek-01k/StratosFi
 cd oneinch-advanced-strategies
 
 # Install dependencies
